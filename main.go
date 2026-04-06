@@ -16,7 +16,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	dota2 "github.com/paralin/go-dota2"
@@ -122,13 +124,17 @@ func main() {
 	}
 
 	logger := logrus.New()
-	logger.SetLevel(logrus.InfoLevel)
+	logger.SetLevel(logrus.DebugLevel)
 
 	client := steam.NewClient()
 	d := dota2.New(client, logger)
 
 	gcReady := make(chan struct{})
 	gcReadyOnce := make(chan struct{}, 1)
+
+	// startCh is closed when "!start" is received in lobby chat.
+	startCh := make(chan struct{})
+	var startOnce sync.Once
 
 	go func() {
 		for event := range client.Events() {
@@ -159,6 +165,25 @@ func main() {
 					}
 				}
 
+			case *events.ChatMessage:
+				if strings.TrimSpace(e.GetText()) == "!start" {
+					log.Printf("[chat] received !start from %s — launching game", e.GetPersonaName())
+					startOnce.Do(func() { close(startCh) })
+				}
+
+			case *events.ReadyUpStatus:
+				log.Printf("[readyup] lobby=%d accepted=%v declined=%v local_state=%v",
+					e.GetLobbyId(), e.GetAcceptedIds(), e.GetDeclinedIds(), e.GetLocalReadyState())
+
+			case *events.UnhandledGCPacket:
+				msgType := e.Packet.MsgType
+				name := protocol.EDOTAGCMsg_name[int32(msgType)]
+				if name == "" {
+					log.Printf("[gc] unhandled packet type=%d", msgType)
+				} else {
+					log.Printf("[gc] unhandled packet type=%d (%s)", msgType, name)
+				}
+
 			case *steam.LogOnFailedEvent:
 				log.Fatalf("[steam] login failed: %v", e.Result)
 
@@ -171,8 +196,17 @@ func main() {
 		}
 	}()
 
+	/*
+		type PortAddr struct {
+			IP   net.IP
+			Port uint16
+		}
+
+		162.254.199.181:27017
+	*/
+
 	addr := client.Connect()
-	log.Printf("[steam] connecting to %v...", addr)
+	log.Printf("[steam] connecting to %v", addr)
 
 	log.Println("waiting for Dota2 GC connection...")
 	select {
@@ -184,13 +218,17 @@ func main() {
 
 	// --- Create the lobby ---
 
-	gameMode := uint32(protocol.DOTA_GameMode_DOTA_GAMEMODE_CM)
+	// TODO: change back to DOTA_GAMEMODE_CM for real matches
+	gameMode := uint32(protocol.DOTA_GameMode_DOTA_GAMEMODE_AP)
 	visibility := protocol.DOTALobbyVisibility_DOTALobbyVisibility_Public
 	details := &protocol.CMsgPracticeLobbySetDetails{
-		GameName:   proto.String(lobbyName),
-		PassKey:    proto.String(lobbyPass),
-		GameMode:   &gameMode,
-		Visibility: &visibility,
+		GameName:     proto.String(lobbyName),
+		PassKey:      proto.String(lobbyPass),
+		GameMode:     &gameMode,
+		Visibility:   &visibility,
+		ServerRegion: proto.Uint32(3), // Europe West
+		// TODO: remove cheats before running real matches
+		AllowCheats: proto.Bool(true),
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -201,14 +239,67 @@ func main() {
 	cancel()
 
 	log.Printf("[lobby] created — name: %q  password: %q", lobbyName, lobbyPass)
-	log.Println("[lobby] join via Dota 2 → Play → Custom Lobbies → search for the lobby name")
-	log.Println("[lobby] play a game to completion, then the bot will fetch match details")
 
 	// --- Watch for match completion via SOCache ---
 
 	lobbyCtr, err := d.GetCache().GetContainerForTypeID(uint32(cso.Lobby))
 	if err != nil {
 		log.Fatalf("get lobby cache container: %v", err)
+	}
+
+	// Give the cache a moment to synchronize the initial lobby state from the GC.
+	time.Sleep(2 * time.Second)
+
+	var lobbyID uint64
+	if obj := lobbyCtr.GetOne(); obj != nil {
+		if lobby, ok := obj.(*protocol.CSODOTALobby); ok {
+			lobbyID = lobby.GetLobbyId()
+			log.Printf("[lobby] VERIFIED — LobbyID: %d  State: %v  Region: %v",
+				lobbyID, lobby.GetState(), lobby.GetServerRegion())
+		} else {
+			log.Println("[lobby] Warning: Cache object found but could not be cast to CSODOTALobby")
+		}
+	} else {
+		log.Println("[lobby] Warning: Lobby not found in SOCache after creation")
+	}
+
+	// --- Leave the player slot into the unassigned pool ---
+	// Equivalent to clicking the red X next to a player name in the lobby UI.
+
+	log.Println("[lobby] leaving player slot (moving to unassigned pool)...")
+	d.JoinLobbyTeam(protocol.DOTA_GC_TEAM_DOTA_GC_TEAM_SPECTATOR, 0)
+
+	// --- Join lobby chat channel to receive commands ---
+
+	if lobbyID != 0 {
+		channelName := "Lobby_" + strconv.FormatUint(lobbyID, 10)
+		chatCtx, chatCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		chatResp, chatErr := d.JoinChatChannel(chatCtx, channelName, protocol.DOTAChatChannelTypeT_DOTAChannelType_Lobby, false)
+		chatCancel()
+		if chatErr != nil {
+			log.Printf("[chat] failed to join lobby chat %q: %v", channelName, chatErr)
+		} else {
+			log.Printf("[chat] joined lobby chat %q (channel_id=%d)", channelName, chatResp.GetChannelId())
+		}
+	} else {
+		log.Println("[chat] skipping chat join — lobby ID unknown")
+	}
+
+	log.Println("[lobby] join via Dota 2 → Play → Custom Lobbies → search for the lobby name")
+	log.Println("[lobby] type !start in lobby chat when ready — the bot will launch the game")
+
+	// --- Wait for !start command, then launch ---
+
+	select {
+	case <-startCh:
+		log.Println("[lobby] launching game...")
+		d.LaunchLobby()
+		// Leave immediately — SOCache subscription survives the leave (confirmed
+		// by prior test run) so we still get POSTGAME / match_id updates.
+		d.LeaveLobby()
+		log.Println("[lobby] left lobby after launch")
+	case <-time.After(4 * time.Hour):
+		log.Fatal("timed out waiting for !start command")
 	}
 
 	eventCh, unsub, err := lobbyCtr.Subscribe()
