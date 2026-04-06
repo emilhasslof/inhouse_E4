@@ -1,0 +1,17 @@
+# Bot secrets and runtime files
+bot/.env
+bot/sentry.bin
+bot/loginkey.txt
+
+# Go build artifacts and binaries
+bot/inhouse-poc
+bot/inhouse-buddy-bot
+
+# Sensitive — steamguard revocation code
+bot/secrets.txt
+
+# Old project (reference only, not part of new codebase)
+inhouse-buddy/
+
+# Claude internal
+.claude/
