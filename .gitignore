@@ -1,14 +1,6 @@
-# Bot secrets and runtime files
-bot/.env
-bot/sentry.bin
-bot/loginkey.txt
-
-# Go build artifacts and binaries
-bot/inhouse-poc
-bot/inhouse-buddy-bot
-
-# Sensitive — steamguard revocation code
-bot/secrets.txt
+# Steam bot credentials and runtime files
+.env
+**/secrets.txt
 
 # Old project (reference only, not part of new codebase)
 inhouse-buddy/
@@ -16,13 +8,11 @@ inhouse-buddy/
 # Claude internal
 .claude/
 
-# SQLite database files
+# SQLite — database directory and any stray db files
+data/
 *.db
 *.db-shm
 *.db-wal
-
-# Secrets
-secrets.txt
 
 # Compiled binaries
 inhouse-buddy-bot

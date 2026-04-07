@@ -3,6 +3,8 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	_ "modernc.org/sqlite"
 )
@@ -13,7 +15,14 @@ type DB struct {
 }
 
 // Open opens (or creates) the SQLite database at path and runs migrations.
+// Parent directories are created automatically if they don't exist.
 func Open(path string) (*DB, error) {
+	if dir := filepath.Dir(path); dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("create db dir: %w", err)
+		}
+	}
+
 	conn, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)

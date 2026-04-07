@@ -23,7 +23,7 @@ import (
 func main() {
 	loadEnv(".env")
 
-	dbPath := getEnvOr("DB_PATH", "inhouse.db")
+	dbPath := getEnvOr("DB_PATH", "data/inhouse.db")
 	port := getEnvOr("PORT", "8080")
 	appEnv := getEnvOr("APP_ENV", "production")
 

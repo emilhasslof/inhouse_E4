@@ -4,66 +4,133 @@
 
 ## Goal
 
-Automate private Dota 2 inhouse lobby creation and collect post-match statistics for an amateur inhouse league website.
+Dota 2 inhouse league stats website for a small group (~10-20 players). Collect match data via Game State Integration (GSI), store it in SQLite, and serve a leaderboard/scoreboard web UI.
 
 ## Architecture
 
-Single Go binary (`main.go`) using:
-- `github.com/paralin/go-steam` — Steam client connection and auth
-- `github.com/paralin/go-dota2` — Dota 2 Game Coordinator (GC) protocol
-- TOTP auth via `.env` (`STEAM_TOTP_SECRET`)
+Single Go binary (`cmd/server`) serving everything: GSI ingest endpoint, web pages, and static assets. SQLite on a Fly.io persistent volume. No separate frontend build step — HTML templates and CSS are embedded directly in the binary via `go:embed`.
 
-Supporting tool:
-- `gsi/main.go` — standalone HTTP server that receives Dota 2 GSI payloads on `:1337`
+```
+Player's Dota client → POST /gsi → Go HTTP server → SQLite (data/inhouse.db)
+                                                            ↓
+                                              HTMX + plain CSS web pages
+```
 
-## Bot Lifecycle
+**Key dependencies:**
+- `github.com/go-chi/chi/v5` — HTTP routing
+- `modernc.org/sqlite` — pure-Go SQLite (no CGO, clean Docker builds)
+- `github.com/paralin/go-steam` + `go-dota2` — Steam bot (lobby creation only)
 
-1. Connect to Steam with fresh TOTP code (generated at `ConnectedEvent`, not startup — fixes ~80% auth failure rate)
-2. Connect to Dota 2 GC
-3. Create lobby (AP mode, Europe West, no cheats, spectating allowed)
-4. Read lobby ID from SOCache
-5. Kick self (`KickLobbyMemberFromTeam`) from team slot → moves bot to unassigned pool
-6. Wait for `start` command (stdin) or `!start` in lobby chat
-7. Launch game
-8. Poll `RequestMatchDetails` every 30s until result=1 (or 4h timeout)
-9. Dump full `CMsgGCMatchDetailsResponse` JSON
+## How Data Collection Works
 
-## Key Findings / Dead Ends
+Each player installs a GSI config file that sends live match data to the server every ~1 second. The server authenticates payloads by a **pre-shared per-player token** embedded in the config. Since each player only sees their own `player` block, stats are aggregated by receiving from all 10 players independently.
 
-### Slot management
-- `BROADCASTER`, `SPECTATOR`, `NOTEAM` via `JoinLobbyTeam` all fail — bot still appears as a connecting game client and blocks launch
-- **Solution that works:** `KickLobbyMemberFromTeam` on the bot's own account ID — moves it to unassigned pool, doesn't block game launch, host status retained
+GSI config location: `~/.local/share/Steam/steamapps/common/dota 2 beta/game/dota/cfg/gamestate_integration/gamestate_integration_inhouse.cfg`
 
-### Match stats access
-- `RequestMatchDetails` returns result=2 (in progress) during game, result=15 (AccessDenied) after
-- Private practice lobbies are **not recorded** in the GC match history — this is a Valve policy decision, not an auth problem
-- `FindTopSourceTVGames` with lobby ID returns empty — private lobbies don't appear in SourceTV listings
-- SOCache lobby subscription stops receiving updates once the game starts (bot is not a game client)
+Post-game detection: when `map.game_state == "DOTA_GAMERULES_STATE_POST_GAME"`, the server materialises final stats into `match_player_stats` and marks the match completed.
 
-### Auth
-- TOTP code must be generated immediately before `LogOn()`, not at startup — a code generated near end of 30s window expires before TCP handshake completes
-- On `EResult_TwoFactorCodeMismatch`, bot waits for the next window and retries automatically
+## Database Schema (SQLite)
 
-## Current Direction: GSI
-
-Since the GC API is a dead end for private lobbies, pivoting to **Dota 2 Game State Integration**:
-- Config installed at: `~/.local/share/Steam/steamapps/common/dota 2 beta/game/dota/cfg/gamestate_integration/gamestate_integration_inhouse.cfg`
-- Sends to `http://localhost:1337/gsi`
-- `gsi/main.go` receives payloads, prints sections, saves timestamped JSON files
-- Next step: run a match with GSI active and inspect what data is available, particularly `allplayers` and whether enemy stats are included
-
-## Open Questions
-
-- Does `allplayers` in GSI include enemy gold/networth for a regular player, or only for spectators?
-- If enemy data is restricted, can we aggregate from all 10 players' individual feeds?
-- Is the bot still useful alongside GSI for lobby creation/management, or can players self-host?
+| Table | Purpose |
+|---|---|
+| `players` | Registered players — display name + unique GSI auth token |
+| `matches` | One row per match — state, scores, duration |
+| `gsi_snapshots` | Raw 1-per-second stream per player (future: gold graphs, kill timelines) |
+| `match_player_stats` | Materialised end-of-match K/D/A/GPM/XPM — what the web pages read |
 
 ## File Map
 
-| File | Purpose |
-|------|---------|
-| `main.go` | Bot: Steam auth, lobby creation, self-kick, game launch, match detail polling |
-| `gsi/main.go` | GSI receiver: HTTP server, payload logging, JSON dumps |
-| `run.sh` | `go run .` with protobuf conflict suppression |
-| `.env` | Steam credentials (gitignored) |
-| `gamestate_integration_inhouse.cfg` | Dota GSI config (in Steam install, not this repo) |
+| Path | Purpose |
+|---|---|
+| `cmd/server/main.go` | Server entry point — opens DB, wires handlers, listens |
+| `cmd/bot/main.go` | Steam bot — creates lobbies, self-kicks, waits for `!start` |
+| `cmd/datagen/main.go` | **Dev only** — fake GSI generator for 10 simulated players |
+| `internal/db/` | SQLite layer: schema, queries, types |
+| `internal/gsi/handler.go` | `POST /gsi` — auth, snapshot insert, post-game detection |
+| `internal/web/` | HTTP handlers + chi router for web pages |
+| `web/templates/` | HTML templates (layout, matches list, scoreboard, leaderboard) |
+| `web/static/style.css` | Dark Dota-themed CSS |
+| `web/web.go` | `go:embed` declarations + pre-parsed templates |
+| `gsi/main.go` | Original local GSI debug receiver (reference only, not used in prod) |
+| `data/` | SQLite database files — gitignored |
+| `.env` | Steam credentials — gitignored |
+| `Dockerfile` | Builds `cmd/server` only (datagen is never included) |
+| `fly.toml` | Fly.io config — `ams` region, volume mount at `/data` |
+
+## TODO.md
+
+`TODO.md` is the shared task board. Keep it up to date:
+- If you complete something on the list, mark it `[x]` or move it to Done.
+- If you notice something that should be done — a bug, a missing feature, a follow-up — add it.
+- If a user mentions something they want but it's out of scope for the current branch, add it to the backlog instead of doing it now.
+
+## Git Workflow
+
+**Never commit directly to `main`.** Always work on a branch and open a PR.
+
+**Branch naming:**
+- `feature/short-description` — new functionality
+- `bugfix/short-description` — fixing broken behaviour
+- `enhancement/short-description` — improving existing functionality
+
+**Merging:** anyone can merge once one other team member has approved the PR.
+
+**Scope discipline:** branches should be short and focused. As work progresses, actively monitor whether the changes are staying on topic. If the work is starting to span multiple unrelated concerns — for example touching both the ingest pipeline and the UI for unrelated reasons, or pulling in extra features beyond what was asked — pause and say something like:
+
+> "This is starting to touch a few different things. Would you like to keep the current branch focused on X and open a new branch for Y?"
+
+Don't wait until the branch is already large. Raise it early, and raise it nicely.
+
+## Running Locally
+
+```bash
+# Start server in dev mode (auto-seeds 10 fake datagen players)
+APP_ENV=development go run ./cmd/server
+
+# In another terminal: simulate a match
+go run ./cmd/datagen
+# Commands: start, stop, status, quit
+```
+
+Open `http://localhost:8080`. After `stop`, the scoreboard page shows all 10 players' stats.
+
+## Deploying
+
+```bash
+fly launch    # first time only
+fly deploy
+```
+
+The Dockerfile builds only `cmd/server`. `DB_PATH` defaults to `/data/inhouse.db` which is the mounted Fly.io volume.
+
+## Adding Real Players
+
+Insert directly into SQLite (generate tokens with `openssl rand -hex 16`):
+
+```sql
+INSERT INTO players (steam_id, display_name, token)
+VALUES ('76561197990491029', 'PlayerName', 'abc123...');
+```
+
+Distribute a personalised GSI config to each player with their token in the `auth` block.
+
+## Key Findings / Dead Ends
+
+### Why not the GC API for match stats?
+- `RequestMatchDetails` returns result=15 (AccessDenied) for private practice lobbies
+- Valve does not record private lobby matches in the GC match history
+- `FindTopSourceTVGames` returns empty for private lobbies
+- **Solution:** GSI instead — the client pushes data to us during the match
+
+### Steam bot slot management
+- `JoinLobbyTeam` with `NOTEAM`/`BROADCASTER`/`SPECTATOR` all still block game launch (bot appears as a game client)
+- **Solution:** `KickLobbyMemberFromTeam` on the bot's own account ID — moves it to unassigned pool, retains host status, doesn't block launch
+
+### Steam auth
+- TOTP code must be generated immediately before `LogOn()`, not at startup — near-expiry codes fail mid-TCP-handshake
+- On `EResult_TwoFactorCodeMismatch`, bot waits for the next 30s window and retries automatically
+
+## Open Questions
+
+- Does `allplayers` in GSI include enemy stats for a regular player (not spectator)? If yes, one player's feed is sufficient per match instead of needing all 10. Needs a real match test.
+- Is the Steam bot still needed once GSI is proven? Could players self-host lobbies, or do we keep the bot for consistency?
