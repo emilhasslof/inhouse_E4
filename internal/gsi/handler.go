@@ -6,7 +6,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/emilh/inhouse-e6/internal/db"
+	"github.com/emilh/inhouse-e4/internal/db"
 )
 
 // Payload mirrors the JSON structure that Dota 2 sends via GSI.

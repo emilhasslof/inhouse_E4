@@ -15,9 +15,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/emilh/inhouse-e6/internal/db"
-	"github.com/emilh/inhouse-e6/internal/gsi"
-	webhandlers "github.com/emilh/inhouse-e6/internal/web"
+	"github.com/emilh/inhouse-e4/internal/db"
+	"github.com/emilh/inhouse-e4/internal/gsi"
+	webhandlers "github.com/emilh/inhouse-e4/internal/web"
 )
 
 func main() {

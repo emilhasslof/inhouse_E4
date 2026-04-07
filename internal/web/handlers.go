@@ -8,8 +8,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/emilh/inhouse-e6/internal/db"
-	webpkg "github.com/emilh/inhouse-e6/web"
+	"github.com/emilh/inhouse-e4/internal/db"
+	webpkg "github.com/emilh/inhouse-e4/web"
 )
 
 // Handler serves the website pages backed by the database.

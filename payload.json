@@ -1,0 +1,136 @@
+
+--- GSI payload @ 21:59:50 ---
+sections present: hero items events draft previously auth map player
+
+[map]
+{
+  "clock_time": -70,
+  "customgamename": "",
+  "daytime": false,
+  "dire_score": 0,
+  "game_state": "DOTA_GAMERULES_STATE_PRE_GAME",
+  "game_time": 32,
+  "matchid": "8762256430",
+  "name": "start",
+  "nightstalker_night": false,
+  "paused": false,
+  "radiant_score": 0,
+  "ward_purchase_cooldown": 0,
+  "win_team": "none"
+}
+
+[player]
+{
+  "accountid": "30225301",
+  "activity": "playing",
+  "assists": 0,
+  "commands_issued": 13,
+  "deaths": 0,
+  "denies": 0,
+  "gold": 600,
+  "gold_from_creep_kills": 0,
+  "gold_from_hero_kills": 0,
+  "gold_from_income": 0,
+  "gold_from_shared": 0,
+  "gold_reliable": 0,
+  "gold_unreliable": 600,
+  "gpm": 0,
+  "kill_list": {},
+  "kill_streak": 0,
+  "kills": 0,
+  "last_hits": 0,
+  "name": "HACKERMAN",
+  "player_slot": 1,
+  "steamid": "76561197990491029",
+  "team_name": "radiant",
+  "team_slot": 0,
+  "xpm": 0
+}
+
+[hero]
+{
+  "aghanims_scepter": false,
+  "aghanims_shard": false,
+  "alive": true,
+  "attributes_level": 0,
+  "break": false,
+  "buyback_cooldown": 0,
+  "buyback_cost": 246,
+  "disarmed": false,
+  "facet": 0,
+  "has_debuff": false,
+  "health": 516,
+  "health_percent": 100,
+  "hexed": false,
+  "id": 26,
+  "level": 1,
+  "magicimmune": false,
+  "mana": 303,
+  "mana_percent": 100,
+  "max_health": 516,
+  "max_mana": 303,
+  "muted": false,
+  "name": "npc_dota_hero_lion",
+  "permanent_buffs": {},
+  "respawn_seconds": 0,
+  "silenced": false,
+  "smoked": false,
+  "stunned": false,
+  "talent_1": false,
+  "talent_2": false,
+  "talent_3": false,
+  "talent_4": false,
+  "talent_5": false,
+  "talent_6": false,
+  "talent_7": false,
+  "talent_8": false,
+  "xp": 0,
+  "xpos": -6649,
+  "ypos": -6287
+}
+
+[events]
+[]
+
+[draft]
+{}
+2026/04/07 21:59:50 full payload saved to gsi_215950.json
+
+--- GSI payload @ 21:59:52 ---
+sections present: events draft previously auth player
+
+[player]
+{}
+
+[events]
+[]
+
+[draft]
+{}
+2026/04/07 21:59:52 full payload saved to gsi_215952.json
+
+--- GSI payload @ 22:00:22 ---
+sections present: player events draft auth
+
+[player]
+{}
+
+[events]
+[]
+
+[draft]
+{}
+2026/04/07 22:00:22 full payload saved to gsi_220022.json
+
+--- GSI payload @ 22:00:52 ---
+sections present: player events draft auth
+
+[player]
+{}
+
+[events]
+[]
+
+[draft]
+{}
+2026/04/07 22:00:52 full payload saved to gsi_220052.json

@@ -6,8 +6,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/emilh/inhouse-e6/internal/gsi"
-	webpkg "github.com/emilh/inhouse-e6/web"
+	"github.com/emilh/inhouse-e4/internal/gsi"
+	webpkg "github.com/emilh/inhouse-e4/web"
 )
 
 // NewRouter wires all routes and returns the root http.Handler.

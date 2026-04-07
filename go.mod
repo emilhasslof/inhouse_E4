@@ -1,4 +1,4 @@
-module github.com/emilh/inhouse-e6
+module github.com/emilh/inhouse-e4
 
 go 1.25
 

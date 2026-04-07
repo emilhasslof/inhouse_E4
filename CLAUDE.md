@@ -1,4 +1,4 @@
-# inhouse-E6 — Project State
+# inhouse-E4 — Project State
 
 > **Keep this file current.** Update it at the end of any session where something significant changed — architecture decisions, findings, dead ends, or shift in direction. Future Claude instances read this to get up to speed without replaying the full conversation history.
 
