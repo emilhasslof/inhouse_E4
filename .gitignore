@@ -15,3 +15,15 @@ inhouse-buddy/
 
 # Claude internal
 .claude/
+
+# SQLite database files
+*.db
+*.db-shm
+*.db-wal
+
+# Secrets
+secrets.txt
+
+# Compiled binaries
+inhouse-buddy-bot
+gsi/gsi-receiver

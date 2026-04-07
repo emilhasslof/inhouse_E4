@@ -1,0 +1,38 @@
+{{template "layout" .}}
+
+{{define "title"}}Players — Inhouse League{{end}}
+
+{{define "content"}}
+<h1>Leaderboard</h1>
+
+{{if not .}}
+  <p class="empty">No players with recorded matches yet.</p>
+{{else}}
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Player</th>
+      <th>Matches</th>
+      <th>K</th>
+      <th>D</th>
+      <th>A</th>
+      <th>Avg GPM</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range $i, $e := .}}
+    <tr>
+      <td class="rank">{{inc $i}}</td>
+      <td class="player-name">{{$e.DisplayName}}</td>
+      <td>{{$e.MatchesPlayed}}</td>
+      <td class="kills">{{$e.TotalKills}}</td>
+      <td class="deaths">{{$e.TotalDeaths}}</td>
+      <td class="assists">{{$e.TotalAssists}}</td>
+      <td>{{fmtFloat $e.AvgGPM}}</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+{{end}}

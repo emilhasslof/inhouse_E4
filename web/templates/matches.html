@@ -1,0 +1,44 @@
+{{template "layout" .}}
+
+{{define "title"}}Matches — Inhouse League{{end}}
+
+{{define "content"}}
+<h1>Recent Matches</h1>
+
+{{if not .}}
+  <p class="empty">No matches recorded yet. Run the datagen tool or play a match with GSI active.</p>
+{{else}}
+<table>
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Match ID</th>
+      <th>Score</th>
+      <th>Duration</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .}}
+    <tr class="clickable" onclick="window.location='/matches/{{.ID}}'">
+      <td>{{formatTime .StartedAt}}</td>
+      <td class="mono">{{.DotaMatchID}}</td>
+      <td>
+        <span class="radiant">{{.RadiantScore}}</span>
+        <span class="score-sep">—</span>
+        <span class="dire">{{.DireScore}}</span>
+      </td>
+      <td>{{fmtDuration .DurationSecs}}</td>
+      <td>
+        {{if eq .State "completed"}}
+          <span class="badge badge-done">Done</span>
+        {{else}}
+          <span class="badge badge-live">Live</span>
+        {{end}}
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+{{end}}

@@ -1,0 +1,84 @@
+{{template "layout" .}}
+
+{{define "title"}}Match {{.Match.DotaMatchID}} — Inhouse League{{end}}
+
+{{define "content"}}
+<div class="match-header">
+  <a class="back-link" href="/">← All Matches</a>
+  <h1>Match <span class="mono">{{.Match.DotaMatchID}}</span></h1>
+  <div class="match-meta">
+    <span>{{formatTime .Match.StartedAt}}</span>
+    {{if .Match.DurationSecs}}
+    <span>Duration: {{fmtDuration .Match.DurationSecs}}</span>
+    {{end}}
+    {{if eq .Match.State "completed"}}
+      <span class="badge badge-done">Completed</span>
+    {{else}}
+      <span class="badge badge-live">In Progress</span>
+    {{end}}
+  </div>
+</div>
+
+{{if and (not .Radiant) (not .Dire)}}
+  <p class="empty">No player stats yet — match may still be in progress.</p>
+{{else}}
+
+<div class="scoreboard">
+  {{if .Radiant}}
+  <section class="team-section">
+    <h2 class="team-header radiant-header">
+      🟢 Radiant
+      <span class="team-score">{{.Match.RadiantScore}}</span>
+    </h2>
+    {{template "player-table" .Radiant}}
+  </section>
+  {{end}}
+
+  {{if .Dire}}
+  <section class="team-section">
+    <h2 class="team-header dire-header">
+      🔴 Dire
+      <span class="team-score">{{.Match.DireScore}}</span>
+    </h2>
+    {{template "player-table" .Dire}}
+  </section>
+  {{end}}
+</div>
+
+{{end}}
+{{end}}
+
+{{define "player-table"}}
+<table>
+  <thead>
+    <tr>
+      <th>Player</th>
+      <th>Hero</th>
+      <th>K</th>
+      <th>D</th>
+      <th>A</th>
+      <th>GPM</th>
+      <th>XPM</th>
+      <th>LH</th>
+      <th>DN</th>
+      <th>Lvl</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .}}
+    <tr>
+      <td class="player-name">{{.DisplayName}}</td>
+      <td class="hero-name">{{heroName .HeroName}}</td>
+      <td class="kills">{{.Kills}}</td>
+      <td class="deaths">{{.Deaths}}</td>
+      <td class="assists">{{.Assists}}</td>
+      <td>{{.GPM}}</td>
+      <td>{{.XPM}}</td>
+      <td>{{.LastHits}}</td>
+      <td>{{.Denies}}</td>
+      <td>{{.FinalLevel}}</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
