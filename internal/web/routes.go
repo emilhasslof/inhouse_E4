@@ -28,6 +28,7 @@ func NewRouter(gsiH *gsi.Handler, webH *Handler) http.Handler {
 	r.Post("/gsi", gsiH.Receive)
 
 	// JSON API
+	r.Get("/api", webH.Spec)
 	r.Get("/api/matches", webH.Matches)
 	r.Get("/api/matches/{id}", webH.Match)
 	r.Get("/api/players", webH.Players)

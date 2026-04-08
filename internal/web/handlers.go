@@ -22,6 +22,47 @@ func New(database *db.DB) *Handler {
 	return &Handler{db: database}
 }
 
+var specJSON = []byte(`{
+  "endpoints": [
+    {
+      "method": "GET",
+      "path": "/api/matches",
+      "description": "All matches, newest first.",
+      "returns": "{ id, dota_match_id, state, radiant_score, dire_score, duration_secs, started_at, radiant_players?, dire_players? }[]"
+    },
+    {
+      "method": "GET",
+      "path": "/api/matches/:id",
+      "description": "Full scoreboard for a single match.",
+      "returns": "{ match: MatchSummary, radiant: PlayerStat[], dire: PlayerStat[] }"
+    },
+    {
+      "method": "GET",
+      "path": "/api/players",
+      "description": "Player leaderboard sorted by avg GPM.",
+      "returns": "{ id, display_name, matches_played, wins, losses, total_kills, total_deaths, total_assists, avg_gpm, streak }[]"
+    },
+    {
+      "method": "GET",
+      "path": "/api/stats/heroes",
+      "description": "Hero pick and win counts across all completed matches.",
+      "returns": "{ hero_name, picks, wins, bans }[]"
+    },
+    {
+      "method": "GET",
+      "path": "/api/stats/overview",
+      "description": "League-wide aggregate stats.",
+      "returns": "{ total_matches, total_kills, avg_match_duration_secs, longest_match_secs, shortest_match_secs, most_kills_in_match, highest_kda_player, bloodiest_match }"
+    }
+  ]
+}`)
+
+// Spec handles GET /api — returns a JSON listing of all available endpoints.
+func (h *Handler) Spec(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(specJSON)
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
