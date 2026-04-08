@@ -24,6 +24,8 @@ Player's Dota client → POST /gsi → Go HTTP server → SQLite (data/inhouse.d
 
 | Method | Path | Description |
 |--------|------|-------------|
+| GET | /healthz | Health check — returns `{"status":"ok"}` |
+| GET | /api | Endpoint spec — lists all routes and response shapes |
 | POST | /gsi | GSI payload ingest from Dota clients |
 | GET | /api/matches | List matches with team player names |
 | GET | /api/matches/{id} | Match detail + scoreboard |
@@ -33,7 +35,9 @@ Player's Dota client → POST /gsi → Go HTTP server → SQLite (data/inhouse.d
 
 CORS is open (`*`) so the frontend can call from any origin.
 
-**Frontend connection:** Set `API_BASE` in `frontend/src/lib/api.ts` to the backend URL. Currently `""` (uses mock data). Flip to the live server URL to go live.
+**Live URL:** `https://inhousee4-production.up.railway.app`
+
+**Frontend connection:** `API_BASE` in `frontend/src/lib/api.ts` — set to the origin only (no trailing `/api`). The fetch calls append `/api/...` themselves.
 
 **Key dependencies:**
 - `github.com/go-chi/chi/v5` — HTTP routing
@@ -72,7 +76,8 @@ Post-game detection: when `map.game_state == "DOTA_GAMERULES_STATE_POST_GAME"`, 
 | `data/` | SQLite database files — gitignored |
 | `.env` | Steam credentials — gitignored |
 | `Dockerfile` | Builds `cmd/server` only (datagen is never included) |
-| `fly.toml` | Fly.io config — `ams` region, volume mount at `/data` |
+| `railway.toml` | Railway config — health check path `/healthz`, timeout 30s |
+| `fly.toml` | Old Fly.io config — kept for reference but not used |
 
 ## TODO.md
 
@@ -110,16 +115,29 @@ go run ./cmd/datagen
 ```
 
 After `stop`, hit `http://localhost:8080/api/players` or `/api/matches` to verify stats.
-To see the UI, also run the frontend (`cd ../frontend && npm run dev`) and set `API_BASE = "http://localhost:8080"` in `frontend/src/lib/api.ts`.
+To see the UI: run the frontend (`cd ../frontend && npm run dev`). The frontend reads `VITE_API_BASE` from `frontend/.env.local` — set it to `http://localhost:8080` for local dev or the Railway URL for production.
 
 ## Deploying
 
+Hosted on Railway, auto-deploys on push to `main` via GitHub Actions.
+
 ```bash
-fly launch    # first time only
-fly deploy
+git push   # triggers a Railway build and deploy automatically
 ```
 
-The Dockerfile builds only `cmd/server`. `DB_PATH` defaults to `/data/inhouse.db` which is the mounted Fly.io volume.
+Railway project: `inhouse-e4` (emilhasslof's workspace)
+Live URL: `https://inhousee4-production.up.railway.app`
+
+**Environment variables on Railway:**
+- `APP_ENV=development` — seeds 10 players + 3 fake matches on boot (remove when going live with real players)
+- `DB_PATH=/data/inhouse.db` — set this when a persistent volume is attached
+
+**No persistent volume yet** — DB lives in ephemeral container storage and resets on each deploy. Add a Railway volume mounted at `/data` before running real matches.
+
+**Simulating matches against production:**
+```bash
+go run ./cmd/datagen -target https://inhousee4-production.up.railway.app
+```
 
 ## Adding Real Players
 
