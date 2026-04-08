@@ -350,15 +350,15 @@ func (p *FakePlayer) sendPayload(target, matchID string, clockTime int, gameStat
 
 func buildPlayers() []*FakePlayer {
 	return []*FakePlayer{
-		{name: "Arteezy", token: "datagen-radiant-1", hero: "npc_dota_hero_antimage",         team: "radiant", gpmBase: 620},
-		{name: "Miracle",  token: "datagen-radiant-2", hero: "npc_dota_hero_invoker",           team: "radiant", gpmBase: 540},
-		{name: "w33",      token: "datagen-radiant-3", hero: "npc_dota_hero_puck",              team: "radiant", gpmBase: 480},
-		{name: "Ana",      token: "datagen-radiant-4", hero: "npc_dota_hero_phantom_assassin",  team: "radiant", gpmBase: 580},
-		{name: "Puppey",   token: "datagen-radiant-5", hero: "npc_dota_hero_chen",              team: "radiant", gpmBase: 320},
-		{name: "N0tail",   token: "datagen-dire-1",    hero: "npc_dota_hero_io",                team: "dire",    gpmBase: 310},
-		{name: "Ceb",      token: "datagen-dire-2",    hero: "npc_dota_hero_axe",               team: "dire",    gpmBase: 430},
-		{name: "Jerax",    token: "datagen-dire-3",    hero: "npc_dota_hero_earth_spirit",      team: "dire",    gpmBase: 350},
-		{name: "Topson",   token: "datagen-dire-4",    hero: "npc_dota_hero_ogre_magi",         team: "dire",    gpmBase: 500},
-		{name: "Sumail",   token: "datagen-dire-5",    hero: "npc_dota_hero_storm_spirit",      team: "dire",    gpmBase: 570},
+		{name: "Spinelli",      token: "datagen-radiant-1", hero: "npc_dota_hero_anti_mage",        team: "radiant", gpmBase: 630},
+		{name: "Sku",           token: "datagen-radiant-2", hero: "npc_dota_hero_invoker",           team: "radiant", gpmBase: 540},
+		{name: "Jockwe Lamotte",token: "datagen-radiant-3", hero: "npc_dota_hero_storm_spirit",      team: "radiant", gpmBase: 480},
+		{name: "Ottosama",      token: "datagen-radiant-4", hero: "npc_dota_hero_spectre",           team: "radiant", gpmBase: 420},
+		{name: "HACKERMAN",     token: "datagen-radiant-5", hero: "npc_dota_hero_chen",              team: "radiant", gpmBase: 310},
+		{name: "Maddashåååtaaa",token: "datagen-dire-1",    hero: "npc_dota_hero_phantom_assassin",  team: "dire",    gpmBase: 650},
+		{name: "Harvey Specter",token: "datagen-dire-2",    hero: "npc_dota_hero_axe",               team: "dire",    gpmBase: 450},
+		{name: "Deer",          token: "datagen-dire-3",    hero: "npc_dota_hero_earth_spirit",      team: "dire",    gpmBase: 360},
+		{name: "Jointzart",     token: "datagen-dire-4",    hero: "npc_dota_hero_ember_spirit",      team: "dire",    gpmBase: 520},
+		{name: "Lacko",         token: "datagen-dire-5",    hero: "npc_dota_hero_shadow_shaman",     team: "dire",    gpmBase: 300},
 	}
 }

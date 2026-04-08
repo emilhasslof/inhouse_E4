@@ -67,14 +67,14 @@ CREATE INDEX IF NOT EXISTS idx_stats_player ON match_player_stats(player_id);
 // Tokens match the hardcoded tokens in cmd/datagen/main.go.
 const seedSQL = `
 INSERT OR IGNORE INTO players (steam_id, display_name, token) VALUES
-  ('datagen-steam-r1', 'Arteezy',   'datagen-radiant-1'),
-  ('datagen-steam-r2', 'Miracle',   'datagen-radiant-2'),
-  ('datagen-steam-r3', 'w33',       'datagen-radiant-3'),
-  ('datagen-steam-r4', 'Ana',       'datagen-radiant-4'),
-  ('datagen-steam-r5', 'Puppey',    'datagen-radiant-5'),
-  ('datagen-steam-d1', 'N0tail',    'datagen-dire-1'),
-  ('datagen-steam-d2', 'Ceb',       'datagen-dire-2'),
-  ('datagen-steam-d3', 'Jerax',     'datagen-dire-3'),
-  ('datagen-steam-d4', 'Topson',    'datagen-dire-4'),
-  ('datagen-steam-d5', 'Sumail',    'datagen-dire-5');
+  ('datagen-steam-r1', 'Spinelli',       'datagen-radiant-1'),
+  ('datagen-steam-r2', 'Sku',            'datagen-radiant-2'),
+  ('datagen-steam-r3', 'Jockwe Lamotte', 'datagen-radiant-3'),
+  ('datagen-steam-r4', 'Ottosama',       'datagen-radiant-4'),
+  ('datagen-steam-r5', 'HACKERMAN',      'datagen-radiant-5'),
+  ('datagen-steam-d1', 'Maddashåååtaaa', 'datagen-dire-1'),
+  ('datagen-steam-d2', 'Harvey Specter', 'datagen-dire-2'),
+  ('datagen-steam-d3', 'Deer',           'datagen-dire-3'),
+  ('datagen-steam-d4', 'Jointzart',      'datagen-dire-4'),
+  ('datagen-steam-d5', 'Lacko',          'datagen-dire-5');
 `
