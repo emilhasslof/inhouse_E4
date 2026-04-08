@@ -184,8 +184,8 @@ func (db *DB) ListPlayers(ctx context.Context) ([]LeaderboardEntry, error) {
 		           (mps.team_name = 'dire'    AND m.dire_score   > m.radiant_score)
 		         ) THEN 1 ELSE 0 END), 0)    AS wins,
 		       COALESCE(SUM(CASE WHEN m.state = 'completed' AND (
-		           (mps.team_name = 'radiant' AND m.radiant_score <= m.dire_score) OR
-		           (mps.team_name = 'dire'    AND m.dire_score    <= m.radiant_score)
+		           (mps.team_name = 'radiant' AND m.radiant_score < m.dire_score) OR
+		           (mps.team_name = 'dire'    AND m.dire_score    < m.radiant_score)
 		         ) THEN 1 ELSE 0 END), 0)    AS losses,
 		       COALESCE(SUM(mps.kills), 0)   AS total_kills,
 		       COALESCE(SUM(mps.deaths), 0)  AS total_deaths,
