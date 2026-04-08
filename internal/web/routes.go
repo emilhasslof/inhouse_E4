@@ -18,6 +18,12 @@ func NewRouter(gsiH *gsi.Handler, webH *Handler) http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(corsMiddleware)
 
+	// Health check — used by Railway and other orchestrators
+	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"ok"}`))
+	})
+
 	// GSI ingest — receives POST payloads from Dota 2 clients
 	r.Post("/gsi", gsiH.Receive)
 

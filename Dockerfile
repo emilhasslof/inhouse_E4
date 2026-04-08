@@ -12,8 +12,8 @@ FROM alpine:3.20
 WORKDIR /app
 COPY --from=build /app/server .
 
-# /data is mounted as a Fly.io volume and holds the SQLite database file.
-VOLUME /data
+# DB_PATH is overridden at runtime via Railway (or other) env vars.
+# Default points to /data which is created automatically by the server on startup.
 ENV DB_PATH=/data/inhouse.db
 ENV PORT=8080
 

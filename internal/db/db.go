@@ -49,9 +49,20 @@ func Open(path string) (*DB, error) {
 	return db, nil
 }
 
-// Seed inserts dev-only fake players. Call only when APP_ENV=development.
+// Seed inserts dev-only fake players (the 10 inhouse members with datagen tokens).
+// Safe to call multiple times — uses INSERT OR IGNORE.
+// Call only when APP_ENV=development.
 func (db *DB) Seed() error {
 	_, err := db.conn.Exec(seedSQL)
+	return err
+}
+
+// SeedDevMatches inserts three completed fake matches with full player stats
+// so the frontend has real-looking data to work with immediately.
+// Safe to call multiple times — uses INSERT OR IGNORE.
+// Call only when APP_ENV=development.
+func (db *DB) SeedDevMatches() error {
+	_, err := db.conn.Exec(devMatchSQL)
 	return err
 }
 

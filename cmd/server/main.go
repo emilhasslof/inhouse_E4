@@ -34,9 +34,12 @@ func main() {
 	defer database.Close()
 
 	if appEnv == "development" {
-		log.Println("[server] APP_ENV=development — seeding datagen players")
+		log.Println("[server] APP_ENV=development — seeding players and dev match data")
 		if err := database.Seed(); err != nil {
 			log.Printf("[server] seed warning: %v", err)
+		}
+		if err := database.SeedDevMatches(); err != nil {
+			log.Printf("[server] seed matches warning: %v", err)
 		}
 	}
 
