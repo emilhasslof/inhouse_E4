@@ -17,7 +17,7 @@ import (
 
 	"github.com/emilh/inhouse-e4/internal/db"
 	"github.com/emilh/inhouse-e4/internal/gsi"
-	webhandlers "github.com/emilh/inhouse-e4/internal/web"
+	"github.com/emilh/inhouse-e4/internal/web"
 )
 
 func main() {
@@ -41,8 +41,8 @@ func main() {
 	}
 
 	gsiHandler := gsi.New(database)
-	webHandler := webhandlers.New(database)
-	router := webhandlers.NewRouter(gsiHandler, webHandler)
+	webHandler := web.New(database)
+	router := web.NewRouter(gsiHandler, webHandler)
 
 	addr := fmt.Sprintf(":%s", port)
 	log.Printf("[server] listening on http://localhost%s (APP_ENV=%s, DB=%s)", addr, appEnv, dbPath)

@@ -37,46 +37,84 @@ type MatchPlayerStat struct {
 	FinalLevel int
 }
 
-// MatchSummary is the view model for the match list page.
+// MatchSummary is the view model for the match list / detail pages.
 type MatchSummary struct {
-	ID           int64
-	DotaMatchID  string
-	State        string
-	RadiantScore int
-	DireScore    int
-	DurationSecs int
-	StartedAt    int64
+	ID             int64    `json:"id"`
+	DotaMatchID    string   `json:"dota_match_id"`
+	State          string   `json:"state"`
+	RadiantScore   int      `json:"radiant_score"`
+	DireScore      int      `json:"dire_score"`
+	DurationSecs   int      `json:"duration_secs"`
+	StartedAt      int64    `json:"started_at"`
+	RadiantPlayers []string `json:"radiant_players,omitempty"`
+	DirePlayers    []string `json:"dire_players,omitempty"`
 }
 
 // PlayerStatRow is one row in the match scoreboard.
 type PlayerStatRow struct {
-	DisplayName string
-	HeroName    string
-	TeamName    string
-	Kills       int
-	Deaths      int
-	Assists     int
-	GPM         int
-	XPM         int
-	LastHits    int
-	Denies      int
-	FinalLevel  int
+	DisplayName string `json:"display_name"`
+	HeroName    string `json:"hero_name"`
+	TeamName    string `json:"team_name"`
+	Kills       int    `json:"kills"`
+	Deaths      int    `json:"deaths"`
+	Assists     int    `json:"assists"`
+	GPM         int    `json:"gpm"`
+	XPM         int    `json:"xpm"`
+	LastHits    int    `json:"last_hits"`
+	Denies      int    `json:"denies"`
+	FinalLevel  int    `json:"final_level"`
 }
 
 // MatchDetailView is the full data for the match scoreboard page.
 type MatchDetailView struct {
-	Match   MatchSummary
-	Radiant []PlayerStatRow
-	Dire    []PlayerStatRow
+	Match   MatchSummary    `json:"match"`
+	Radiant []PlayerStatRow `json:"radiant"`
+	Dire    []PlayerStatRow `json:"dire"`
 }
 
 // LeaderboardEntry is one row in the player leaderboard.
 type LeaderboardEntry struct {
-	ID           int64
-	DisplayName  string
-	MatchesPlayed int
-	TotalKills   int
-	TotalDeaths  int
-	TotalAssists int
-	AvgGPM       float64
+	ID            int64   `json:"id"`
+	DisplayName   string  `json:"display_name"`
+	MatchesPlayed int     `json:"matches_played"`
+	Wins          int     `json:"wins"`
+	Losses        int     `json:"losses"`
+	TotalKills    int     `json:"total_kills"`
+	TotalDeaths   int     `json:"total_deaths"`
+	TotalAssists  int     `json:"total_assists"`
+	AvgGPM        float64 `json:"avg_gpm"`
+	Streak        int     `json:"streak"`
+}
+
+// HeroStat holds aggregated pick/win data for a single hero.
+// Bans are not tracked so that field is always 0.
+type HeroStat struct {
+	HeroName string `json:"hero_name"`
+	Picks    int    `json:"picks"`
+	Wins     int    `json:"wins"`
+	Bans     int    `json:"bans"`
+}
+
+// KillsRef is a (match_id, kills) pair used in LeagueOverview.
+type KillsRef struct {
+	MatchID int `json:"match_id"`
+	Kills   int `json:"kills"`
+}
+
+// KDARef is a (name, kda) pair used in LeagueOverview.
+type KDARef struct {
+	Name string  `json:"name"`
+	KDA  float64 `json:"kda"`
+}
+
+// LeagueOverview contains aggregate stats across all completed matches.
+type LeagueOverview struct {
+	TotalMatches         int     `json:"total_matches"`
+	TotalKills           int     `json:"total_kills"`
+	AvgMatchDurationSecs float64 `json:"avg_match_duration_secs"`
+	LongestMatchSecs     int     `json:"longest_match_secs"`
+	ShortestMatchSecs    int     `json:"shortest_match_secs"`
+	MostKillsInMatch     KillsRef `json:"most_kills_in_match"`
+	HighestKDAPlayer     KDARef   `json:"highest_kda_player"`
+	BloodyMatch          KillsRef `json:"bloodiest_match"`
 }

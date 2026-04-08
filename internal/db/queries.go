@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // PlayerByToken returns the player with the given GSI auth token.
@@ -88,12 +89,18 @@ func (db *DB) CompleteMatch(ctx context.Context, matchID int64, radiantScore, di
 	return err
 }
 
-// ListMatches returns all matches ordered by most recently started.
+// ListMatches returns all matches ordered by most recently started, including
+// comma-separated player name lists per team from match_player_stats.
 func (db *DB) ListMatches(ctx context.Context) ([]MatchSummary, error) {
 	rows, err := db.conn.QueryContext(ctx, `
-		SELECT id, dota_match_id, state, radiant_score, dire_score, duration_secs, started_at
-		FROM matches
-		ORDER BY started_at DESC`)
+		SELECT m.id, m.dota_match_id, m.state, m.radiant_score, m.dire_score, m.duration_secs, m.started_at,
+		       GROUP_CONCAT(CASE WHEN mps.team_name = 'radiant' THEN p.display_name END) AS radiant_players,
+		       GROUP_CONCAT(CASE WHEN mps.team_name = 'dire'    THEN p.display_name END) AS dire_players
+		FROM matches m
+		LEFT JOIN match_player_stats mps ON mps.match_id = m.id
+		LEFT JOIN players p ON p.id = mps.player_id
+		GROUP BY m.id
+		ORDER BY m.started_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -102,8 +109,18 @@ func (db *DB) ListMatches(ctx context.Context) ([]MatchSummary, error) {
 	var matches []MatchSummary
 	for rows.Next() {
 		var m MatchSummary
-		if err := rows.Scan(&m.ID, &m.DotaMatchID, &m.State, &m.RadiantScore, &m.DireScore, &m.DurationSecs, &m.StartedAt); err != nil {
+		var radiant, dire sql.NullString
+		if err := rows.Scan(
+			&m.ID, &m.DotaMatchID, &m.State, &m.RadiantScore, &m.DireScore, &m.DurationSecs, &m.StartedAt,
+			&radiant, &dire,
+		); err != nil {
 			return nil, err
+		}
+		if radiant.Valid && radiant.String != "" {
+			m.RadiantPlayers = strings.Split(radiant.String, ",")
+		}
+		if dire.Valid && dire.String != "" {
+			m.DirePlayers = strings.Split(dire.String, ",")
 		}
 		matches = append(matches, m)
 	}
@@ -156,17 +173,27 @@ func (db *DB) GetMatchDetail(ctx context.Context, matchID int64) (*MatchDetailVi
 	return view, rows.Err()
 }
 
-// ListPlayers returns all players with aggregated career stats.
+// ListPlayers returns all players with aggregated career stats including wins and losses.
+// Streak is computed in Go from a separate ordered query; call ListPlayerStreaks to get it.
 func (db *DB) ListPlayers(ctx context.Context) ([]LeaderboardEntry, error) {
 	rows, err := db.conn.QueryContext(ctx, `
 		SELECT p.id, p.display_name,
 		       COUNT(DISTINCT mps.match_id)  AS matches_played,
+		       COALESCE(SUM(CASE WHEN m.state = 'completed' AND (
+		           (mps.team_name = 'radiant' AND m.radiant_score > m.dire_score) OR
+		           (mps.team_name = 'dire'    AND m.dire_score   > m.radiant_score)
+		         ) THEN 1 ELSE 0 END), 0)    AS wins,
+		       COALESCE(SUM(CASE WHEN m.state = 'completed' AND (
+		           (mps.team_name = 'radiant' AND m.radiant_score <= m.dire_score) OR
+		           (mps.team_name = 'dire'    AND m.dire_score    <= m.radiant_score)
+		         ) THEN 1 ELSE 0 END), 0)    AS losses,
 		       COALESCE(SUM(mps.kills), 0)   AS total_kills,
 		       COALESCE(SUM(mps.deaths), 0)  AS total_deaths,
 		       COALESCE(SUM(mps.assists), 0) AS total_assists,
 		       COALESCE(AVG(mps.gpm), 0)     AS avg_gpm
 		FROM players p
 		LEFT JOIN match_player_stats mps ON mps.player_id = p.id
+		LEFT JOIN matches m ON m.id = mps.match_id
 		GROUP BY p.id
 		ORDER BY avg_gpm DESC`)
 	if err != nil {
@@ -178,10 +205,136 @@ func (db *DB) ListPlayers(ctx context.Context) ([]LeaderboardEntry, error) {
 	for rows.Next() {
 		var e LeaderboardEntry
 		if err := rows.Scan(&e.ID, &e.DisplayName, &e.MatchesPlayed,
+			&e.Wins, &e.Losses,
 			&e.TotalKills, &e.TotalDeaths, &e.TotalAssists, &e.AvgGPM); err != nil {
 			return nil, err
 		}
 		entries = append(entries, e)
 	}
 	return entries, rows.Err()
+}
+
+// ListPlayerStreaks returns a map of player_id → streak value.
+// Positive = win streak, negative = loss streak (0 = no completed matches).
+func (db *DB) ListPlayerStreaks(ctx context.Context) (map[int64]int, error) {
+	rows, err := db.conn.QueryContext(ctx, `
+		SELECT mps.player_id,
+		       CASE WHEN (mps.team_name = 'radiant' AND m.radiant_score > m.dire_score) OR
+		                 (mps.team_name = 'dire'    AND m.dire_score   > m.radiant_score)
+		            THEN 1 ELSE 0 END AS won
+		FROM match_player_stats mps
+		JOIN matches m ON m.id = mps.match_id
+		WHERE m.state = 'completed'
+		ORDER BY mps.player_id, m.started_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Accumulate ordered results per player, then compute streaks.
+	type result struct{ won bool }
+	playerResults := map[int64][]bool{}
+	for rows.Next() {
+		var playerID int64
+		var won int
+		if err := rows.Scan(&playerID, &won); err != nil {
+			return nil, err
+		}
+		playerResults[playerID] = append(playerResults[playerID], won == 1)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	streaks := make(map[int64]int, len(playerResults))
+	for playerID, results := range playerResults {
+		if len(results) == 0 {
+			continue
+		}
+		first := results[0]
+		count := 0
+		for _, r := range results {
+			if r == first {
+				count++
+			} else {
+				break
+			}
+		}
+		if first {
+			streaks[playerID] = count
+		} else {
+			streaks[playerID] = -count
+		}
+	}
+	return streaks, nil
+}
+
+// HeroStats returns aggregated pick and win counts per hero across completed matches.
+func (db *DB) HeroStats(ctx context.Context) ([]HeroStat, error) {
+	rows, err := db.conn.QueryContext(ctx, `
+		SELECT mps.hero_name,
+		       COUNT(*) AS picks,
+		       SUM(CASE WHEN (mps.team_name = 'radiant' AND m.radiant_score > m.dire_score) OR
+		                     (mps.team_name = 'dire'    AND m.dire_score   > m.radiant_score)
+		                THEN 1 ELSE 0 END) AS wins
+		FROM match_player_stats mps
+		JOIN matches m ON m.id = mps.match_id
+		WHERE m.state = 'completed'
+		GROUP BY mps.hero_name
+		ORDER BY picks DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stats []HeroStat
+	for rows.Next() {
+		var s HeroStat
+		if err := rows.Scan(&s.HeroName, &s.Picks, &s.Wins); err != nil {
+			return nil, err
+		}
+		stats = append(stats, s)
+	}
+	return stats, rows.Err()
+}
+
+// GetLeagueOverview returns aggregate stats across all completed matches.
+func (db *DB) GetLeagueOverview(ctx context.Context) (*LeagueOverview, error) {
+	ov := &LeagueOverview{}
+
+	// Main aggregates.
+	err := db.conn.QueryRowContext(ctx, `
+		SELECT COUNT(*), COALESCE(SUM(radiant_score + dire_score), 0),
+		       COALESCE(AVG(duration_secs), 0),
+		       COALESCE(MAX(duration_secs), 0),
+		       COALESCE(MIN(CASE WHEN duration_secs > 0 THEN duration_secs END), 0)
+		FROM matches WHERE state = 'completed'`).
+		Scan(&ov.TotalMatches, &ov.TotalKills, &ov.AvgMatchDurationSecs,
+			&ov.LongestMatchSecs, &ov.ShortestMatchSecs)
+	if err != nil {
+		return nil, fmt.Errorf("league overview aggregates: %w", err)
+	}
+
+	// Bloodiest match (most combined kills = highest radiant+dire score).
+	_ = db.conn.QueryRowContext(ctx, `
+		SELECT id, (radiant_score + dire_score)
+		FROM matches WHERE state = 'completed'
+		ORDER BY (radiant_score + dire_score) DESC LIMIT 1`).
+		Scan(&ov.BloodyMatch.MatchID, &ov.BloodyMatch.Kills)
+	ov.MostKillsInMatch = ov.BloodyMatch // same concept
+
+	// Highest KDA player (kills + assists*0.5) / max(deaths, 1).
+	_ = db.conn.QueryRowContext(ctx, `
+		SELECT p.display_name,
+		       (CAST(SUM(mps.kills) AS REAL) + CAST(SUM(mps.assists) AS REAL) * 0.5)
+		       / MAX(SUM(mps.deaths), 1) AS kda
+		FROM match_player_stats mps
+		JOIN players p ON p.id = mps.player_id
+		JOIN matches m ON m.id = mps.match_id
+		WHERE m.state = 'completed'
+		GROUP BY mps.player_id
+		ORDER BY kda DESC LIMIT 1`).
+		Scan(&ov.HighestKDAPlayer.Name, &ov.HighestKDAPlayer.KDA)
+
+	return ov, nil
 }

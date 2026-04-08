@@ -8,13 +8,32 @@ Dota 2 inhouse league stats website for a small group (~10-20 players). Collect 
 
 ## Architecture
 
-Single Go binary (`cmd/server`) serving everything: GSI ingest endpoint, web pages, and static assets. SQLite on a Fly.io persistent volume. No separate frontend build step — HTML templates and CSS are embedded directly in the binary via `go:embed`.
+Two-part system: a Go backend API + a separate React/TypeScript frontend (in `/home/emilh/inhouse-E6/frontend`, built with Lovable/Vite).
+
+The Go backend is a single binary (`cmd/server`) that handles GSI ingest and serves a JSON REST API. SQLite on a Fly.io persistent volume.
 
 ```
 Player's Dota client → POST /gsi → Go HTTP server → SQLite (data/inhouse.db)
                                                             ↓
-                                              HTMX + plain CSS web pages
+                                                     JSON REST API (/api/*)
+                                                            ↓
+                                             React frontend (separate deployment)
 ```
+
+**API endpoints:**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /gsi | GSI payload ingest from Dota clients |
+| GET | /api/matches | List matches with team player names |
+| GET | /api/matches/{id} | Match detail + scoreboard |
+| GET | /api/players | Player leaderboard (wins/losses/streak/GPM) |
+| GET | /api/stats/heroes | Hero pick/win counts |
+| GET | /api/stats/overview | League-wide aggregate stats |
+
+CORS is open (`*`) so the frontend can call from any origin.
+
+**Frontend connection:** Set `API_BASE` in `frontend/src/lib/api.ts` to the backend URL. Currently `""` (uses mock data). Flip to the live server URL to go live.
 
 **Key dependencies:**
 - `github.com/go-chi/chi/v5` — HTTP routing
@@ -45,12 +64,10 @@ Post-game detection: when `map.game_state == "DOTA_GAMERULES_STATE_POST_GAME"`, 
 | `cmd/server/main.go` | Server entry point — opens DB, wires handlers, listens |
 | `cmd/bot/main.go` | Steam bot — creates lobbies, self-kicks, waits for `!start` |
 | `cmd/datagen/main.go` | **Dev only** — fake GSI generator for 10 simulated players |
-| `internal/db/` | SQLite layer: schema, queries, types |
+| `internal/db/` | SQLite layer: schema, queries, types (all types have JSON tags) |
 | `internal/gsi/handler.go` | `POST /gsi` — auth, snapshot insert, post-game detection |
-| `internal/web/` | HTTP handlers + chi router for web pages |
-| `web/templates/` | HTML templates (layout, matches list, scoreboard, leaderboard) |
-| `web/static/style.css` | Dark Dota-themed CSS |
-| `web/web.go` | `go:embed` declarations + pre-parsed templates |
+| `internal/web/handlers.go` | JSON API handlers for all 5 `/api/*` endpoints |
+| `internal/web/routes.go` | Chi router — GSI ingest + API routes + CORS middleware |
 | `gsi/main.go` | Original local GSI debug receiver (reference only, not used in prod) |
 | `data/` | SQLite database files — gitignored |
 | `.env` | Steam credentials — gitignored |
@@ -92,7 +109,8 @@ go run ./cmd/datagen
 # Commands: start, stop, status, quit
 ```
 
-Open `http://localhost:8080`. After `stop`, the scoreboard page shows all 10 players' stats.
+After `stop`, hit `http://localhost:8080/api/players` or `/api/matches` to verify stats.
+To see the UI, also run the frontend (`cd ../frontend && npm run dev`) and set `API_BASE = "http://localhost:8080"` in `frontend/src/lib/api.ts`.
 
 ## Deploying
 
