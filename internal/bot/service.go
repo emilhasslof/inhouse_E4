@@ -208,6 +208,12 @@ func (s *Service) Start(ctx context.Context) {
 					s.gcReadyOnce.Do(func() { close(s.gcReady) })
 				}
 
+			case *steam.FriendStateEvent:
+				if e.Relationship == steamlang.EFriendRelationship_RequestRecipient {
+					log.Printf("[bot] incoming friend request from %d — accepting", e.SteamId)
+					s.client.Social.AddFriend(e.SteamId)
+				}
+
 			case *steam.LogOnFailedEvent:
 				if e.Result == steamlang.EResult_TwoFactorCodeMismatch && s.totpSecret != "" {
 					log.Println("[bot] TOTP code mismatch — waiting for next window and retrying...")

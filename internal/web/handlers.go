@@ -55,6 +55,19 @@ var specJSON = []byte(`{
       "path": "/api/stats/overview",
       "description": "League-wide aggregate stats.",
       "returns": "{ total_matches, total_kills, avg_match_duration_secs, longest_match_secs, shortest_match_secs, most_kills_in_match, highest_kda_player, bloodiest_match }"
+    },
+    {
+      "method": "GET",
+      "path": "/api/registered-players",
+      "description": "All registered players with their display name and Steam ID.",
+      "returns": "{ display_name, steam_id }[]"
+    },
+    {
+      "method": "POST",
+      "path": "/api/lobby/create",
+      "description": "Create a Dota 2 lobby and invite the given players. Returns immediately.",
+      "body": "{ players: string[] }",
+      "returns": "{ ok: true }"
     }
   ]
 }`)
