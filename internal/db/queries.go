@@ -58,6 +58,25 @@ func (db *DB) PlayersByDisplayNames(ctx context.Context, names []string) ([]Play
 	return players, rows.Err()
 }
 
+// ListRegisteredPlayers returns all players with their steam IDs and display names.
+func (db *DB) ListRegisteredPlayers(ctx context.Context) ([]Player, error) {
+	rows, err := db.conn.QueryContext(ctx,
+		`SELECT id, steam_id, display_name, token FROM players ORDER BY display_name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var players []Player
+	for rows.Next() {
+		var p Player
+		if err := rows.Scan(&p.ID, &p.SteamID, &p.DisplayName, &p.Token); err != nil {
+			return nil, err
+		}
+		players = append(players, p)
+	}
+	return players, rows.Err()
+}
+
 // PlayerByToken returns the player with the given GSI auth token.
 // Returns an error if not found.
 func (db *DB) PlayerByToken(ctx context.Context, token string) (*Player, error) {
