@@ -31,6 +31,7 @@ Player's Dota client → POST /gsi → Go HTTP server → SQLite (data/inhouse.d
 | GET | /healthz | Health check — returns `{"status":"ok"}` |
 | GET | /api | Endpoint spec — lists all routes and response shapes |
 | POST | /gsi | GSI payload ingest from Dota clients |
+| POST | /api/register | Register a new player — takes `{steam_id, display_name}`, returns `{token}`. Open, no auth required. 409 if Steam ID already registered. |
 | GET | /api/matches | List matches with team player names |
 | GET | /api/matches/{id} | Match detail + scoreboard |
 | GET | /api/players | Player leaderboard (wins/losses/streak/GPM) |
@@ -74,7 +75,7 @@ Post-game detection: when `map.game_state == "DOTA_GAMERULES_STATE_POST_GAME"`, 
 | `cmd/datagen/main.go` | **Dev only** — fake GSI generator for 10 simulated players |
 | `internal/db/` | SQLite layer: schema, queries, types (all types have JSON tags) |
 | `internal/gsi/handler.go` | `POST /gsi` — auth, snapshot insert, post-game detection |
-| `internal/web/handlers.go` | JSON API handlers for all 5 `/api/*` endpoints |
+| `internal/web/handlers.go` | JSON API handlers for all `/api/*` endpoints |
 | `internal/web/routes.go` | Chi router — GSI ingest + API routes + CORS middleware |
 | `gsi/main.go` | Original local GSI debug receiver (reference only, not used in prod) |
 | `data/` | SQLite database files — gitignored |
@@ -145,14 +146,19 @@ go run ./cmd/datagen -target https://inhousee4-production.up.railway.app
 
 ## Adding Real Players
 
-Insert directly into SQLite (generate tokens with `openssl rand -hex 16`):
+Players self-register via `register.bat` (lives at the repo root, outside the backend folder — not deployed). The script:
+1. Reads the player's Steam ID from `loginusers.vdf` automatically
+2. Prompts for a display name
+3. POSTs to `POST /api/register` — backend generates a random token and inserts the player row
+4. Writes the GSI config file to the correct Dota install folder
 
+Registration is open — no admin secret required. If a Steam ID is already registered, the endpoint returns 409.
+
+Manual fallback (if needed):
 ```sql
 INSERT INTO players (steam_id, display_name, token)
 VALUES ('76561197990491029', 'PlayerName', 'abc123...');
 ```
-
-Distribute a personalised GSI config to each player with their token in the `auth` block.
 
 ## Key Findings / Dead Ends
 

@@ -10,7 +10,7 @@ Mark items done with `[x]` when complete, or remove them.
 - [ ] Recover Steam bot credentials (`.env` was accidentally deleted and scrubbed from git history) — recreate `.env` with `STEAM_ACCOUNT_NAME`, `STEAM_PASSWORD`, `STEAM_TOTP_SECRET`, then push to Railway with `railway variable set`
 
 - [ ] Run a real match with GSI active and inspect the `allplayers` block — does it include enemy stats for a non-spectator?
-- [ ] Player onboarding — one-time script a new player runs on their machine that registers them on the backend (auto-generates a token, creates the player row) and writes the correct GSI config file to their Dota install. Run once → stat collection works forever. No manual SQL, no config distribution.
+- [x] Player onboarding — `register.bat` (repo root) reads Steam ID automatically, calls `POST /api/register`, and writes the GSI config. Run once → stat collection works forever.
 
 ## Backlog
 
