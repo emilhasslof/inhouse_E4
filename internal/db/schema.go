@@ -71,7 +71,7 @@ INSERT OR IGNORE INTO players (steam_id, display_name, token) VALUES
   ('datagen-steam-r2', 'Sku',            'datagen-radiant-2'),
   ('datagen-steam-r3', 'Jockwe Lamotte', 'datagen-radiant-3'),
   ('datagen-steam-r4', 'Ottosama',       'datagen-radiant-4'),
-  ('datagen-steam-r5', 'HACKERMAN',      'datagen-radiant-5'),
+  ('76561197990491029', 'HACKERMAN',      'datagen-radiant-5'),
   ('datagen-steam-d1', 'Maddashåååtaaa', 'datagen-dire-1'),
   ('datagen-steam-d2', 'Harvey Specter', 'datagen-dire-2'),
   ('datagen-steam-d3', 'Deer',           'datagen-dire-3'),
