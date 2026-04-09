@@ -7,6 +7,8 @@ Mark items done with `[x]` when complete, or remove them.
 
 ## Up next
 
+- [ ] Create registered players endpoint, returning player name and steam id of all regietered players
+- [ ] Send Steam friend request from bot on `POST /api/register` so lobby invites reach players who aren't friends yet
 - [ ] Recover Steam bot credentials (`.env` was accidentally deleted and scrubbed from git history) — recreate `.env` with `STEAM_ACCOUNT_NAME`, `STEAM_PASSWORD`, `STEAM_TOTP_SECRET`, then push to Railway with `railway variable set`
 
 - [ ] Run a real match with GSI active and inspect the `allplayers` block — does it include enemy stats for a non-spectator?
