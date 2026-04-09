@@ -6,6 +6,10 @@
 
 Dota 2 inhouse league stats website for a small group (~10-20 players). Collect match data via Game State Integration (GSI), store it in SQLite, and serve a leaderboard/scoreboard web UI.
 
+## Scope
+
+**We are working on the backend only.** The frontend (`/home/emilh/inhouse-E6/frontend`) is present for reference but should not be modified. Do not suggest or make changes to frontend files.
+
 ## Architecture
 
 Two-part system: a Go backend API + a separate React/TypeScript frontend (in `/home/emilh/inhouse-E6/frontend`, built with Lovable/Vite).

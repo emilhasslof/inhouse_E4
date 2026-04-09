@@ -2,11 +2,31 @@ package db
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
 )
+
+// RegisterPlayer inserts a new player with a randomly generated token.
+// Returns an error if the steam_id is already registered.
+func (db *DB) RegisterPlayer(ctx context.Context, steamID, displayName string) (*Player, error) {
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return nil, fmt.Errorf("generate token: %w", err)
+	}
+	token := hex.EncodeToString(raw)
+
+	_, err := db.conn.ExecContext(ctx,
+		`INSERT INTO players (steam_id, display_name, token) VALUES (?, ?, ?)`,
+		steamID, displayName, token)
+	if err != nil {
+		return nil, fmt.Errorf("register player: %w", err)
+	}
+	return &Player{SteamID: steamID, DisplayName: displayName, Token: token}, nil
+}
 
 // PlayerByToken returns the player with the given GSI auth token.
 // Returns an error if not found.

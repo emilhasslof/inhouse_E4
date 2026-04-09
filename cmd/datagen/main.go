@@ -305,7 +305,7 @@ type gsiHero struct {
 
 func (p *FakePlayer) sendPayload(target, matchID string, clockTime int, gameState string) {
 	gpm := p.gpmBase
-	if clockTime > 0 && clockTime > 0 {
+	if clockTime > 0 {
 		// Derive GPM from accumulated gold
 		gpm = p.gold * 60 / clockTime
 		if gpm > 1000 { gpm = 1000 }
