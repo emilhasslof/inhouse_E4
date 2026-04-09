@@ -9,17 +9,19 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/emilh/inhouse-e4/internal/bot"
 	"github.com/emilh/inhouse-e4/internal/db"
 )
 
 // Handler serves the JSON API backed by the database.
 type Handler struct {
-	db *db.DB
+	db  *db.DB
+	bot *bot.Service
 }
 
 // New creates an API handler.
-func New(database *db.DB) *Handler {
-	return &Handler{db: database}
+func New(database *db.DB, botSvc *bot.Service) *Handler {
+	return &Handler{db: database, bot: botSvc}
 }
 
 var specJSON = []byte(`{
@@ -188,4 +190,32 @@ func (h *Handler) LeagueOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, ov)
+}
+
+// CreateLobby handles POST /api/lobby/create
+// Resolves player display names to DB records, then triggers the bot to create
+// a Dota 2 lobby and invite each player. Returns immediately.
+func (h *Handler) CreateLobby(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Players []string `json:"players"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.Players) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "players list required"})
+		return
+	}
+
+	players, err := h.db.PlayersByDisplayNames(r.Context(), body.Players)
+	if err != nil {
+		log.Printf("[api] lobby create — player lookup: %v", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+
+	if h.bot != nil {
+		go h.bot.CreateLobbyAndInvite(players)
+	} else {
+		log.Println("[api] lobby create — bot not configured, skipping")
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

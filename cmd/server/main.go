@@ -9,12 +9,14 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"strings"
 
+	"github.com/emilh/inhouse-e4/internal/bot"
 	"github.com/emilh/inhouse-e4/internal/db"
 	"github.com/emilh/inhouse-e4/internal/gsi"
 	"github.com/emilh/inhouse-e4/internal/web"
@@ -43,8 +45,14 @@ func main() {
 		}
 	}
 
+	ctx := context.Background()
+	botSvc := bot.New()
+	if botSvc != nil {
+		go botSvc.Start(ctx)
+	}
+
 	gsiHandler := gsi.New(database)
-	webHandler := web.New(database)
+	webHandler := web.New(database, botSvc)
 	router := web.NewRouter(gsiHandler, webHandler)
 
 	addr := fmt.Sprintf(":%s", port)

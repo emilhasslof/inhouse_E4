@@ -28,6 +28,36 @@ func (db *DB) RegisterPlayer(ctx context.Context, steamID, displayName string) (
 	return &Player{SteamID: steamID, DisplayName: displayName, Token: token}, nil
 }
 
+// PlayersByDisplayNames returns all registered players whose display_name is in
+// the provided list. Unrecognised names are silently skipped.
+func (db *DB) PlayersByDisplayNames(ctx context.Context, names []string) ([]Player, error) {
+	if len(names) == 0 {
+		return nil, nil
+	}
+	placeholders := strings.Repeat("?,", len(names))
+	placeholders = placeholders[:len(placeholders)-1] // trim trailing comma
+	args := make([]any, len(names))
+	for i, n := range names {
+		args[i] = n
+	}
+	rows, err := db.conn.QueryContext(ctx,
+		`SELECT id, steam_id, display_name, token FROM players WHERE display_name IN (`+placeholders+`)`,
+		args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var players []Player
+	for rows.Next() {
+		var p Player
+		if err := rows.Scan(&p.ID, &p.SteamID, &p.DisplayName, &p.Token); err != nil {
+			return nil, err
+		}
+		players = append(players, p)
+	}
+	return players, rows.Err()
+}
+
 // PlayerByToken returns the player with the given GSI auth token.
 // Returns an error if not found.
 func (db *DB) PlayerByToken(ctx context.Context, token string) (*Player, error) {
