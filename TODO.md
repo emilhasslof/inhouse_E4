@@ -7,8 +7,9 @@ Mark items done with `[x]` when complete, or remove them.
 
 ## Up next
 
-- [x] Bot auto-accepts incoming Steam friend requests — register.bat opens bot profile so players can add it in one click
 - [ ] Run a real match with GSI active and inspect the `allplayers` block — does it include enemy stats for a non-spectator?
+- [ ] Add `POST /api/bot/reset` endpoint to hard-reset the bot (disconnect + reconnect + re-establish GC) — for a frontend admin button
+- [ ] Kick bot from player slot (via `KickLobbyMemberFromTeam`) instead of leaving lobby — bot retains host status and can still handle `!start` in chat
 
 ## Backlog
 
@@ -18,6 +19,7 @@ Mark items done with `[x]` when complete, or remove them.
 
 ## Done
 
+- [x] Bot auto-accepts incoming Steam friend requests — register.bat opens bot profile so players can add it in one click
 - [x] Prove GSI data can be received and parsed locally (`gsi/main.go`)
 - [x] Scaffold Go server with SQLite and GSI ingest pipeline
 - [x] Dev datagen tool for testing the pipeline without a real match
