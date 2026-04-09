@@ -7,20 +7,23 @@ Mark items done with `[x]` when complete, or remove them.
 
 ## Up next
 
+- [ ] Recover Steam bot credentials (`.env` was accidentally deleted and scrubbed from git history) — recreate `.env` with `STEAM_ACCOUNT_NAME`, `STEAM_PASSWORD`, `STEAM_TOTP_SECRET`, then push to Railway with `railway variable set`
+
 - [ ] Run a real match with GSI active and inspect the `allplayers` block — does it include enemy stats for a non-spectator?
-- [ ] Build a player registration flow (right now players are added manually via raw SQL)
-- [ ] Distribute personalised GSI config files to all league members
+- [x] Player onboarding — `register.bat` (repo root) reads Steam ID automatically, calls `POST /api/register`, and writes the GSI config. Run once → stat collection works forever.
 
 ## Backlog
 
-- [ ] Deploy to Fly.io and verify the full pipeline with a real match
+- [ ] Add persistent Railway volume before real matches start (DB currently resets on redeploy)
+- [ ] Remove `APP_ENV=development` from Railway once real players are registered
 - [ ] Gold-over-time graph on the match detail page (data is already in `gsi_snapshots`)
-- [ ] Player profile page (`/players/:id`) with match history
-- [ ] Win/loss record on the leaderboard
-- [ ] Hero stats — most played, best KDA per hero
 
 ## Done
 
 - [x] Prove GSI data can be received and parsed locally (`gsi/main.go`)
-- [x] Scaffold Go server with SQLite, GSI ingest, and HTMX web pages
+- [x] Scaffold Go server with SQLite and GSI ingest pipeline
 - [x] Dev datagen tool for testing the pipeline without a real match
+- [x] Rewritten to backend-only JSON API (removed HTMX frontend)
+- [x] Deploy to Railway — live at https://inhousee4-production.up.railway.app
+- [x] 23-test suite covering db/gsi/web layers
+- [x] Dev seed data (3 fake matches) so frontend can develop against real API responses

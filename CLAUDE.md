@@ -6,6 +6,10 @@
 
 Dota 2 inhouse league stats website for a small group (~10-20 players). Collect match data via Game State Integration (GSI), store it in SQLite, and serve a leaderboard/scoreboard web UI.
 
+## Scope
+
+**We are working on the backend only.** The frontend (`/home/emilh/inhouse-E6/frontend`) is present for reference but should not be modified. Do not suggest or make changes to frontend files.
+
 ## Architecture
 
 Two-part system: a Go backend API + a separate React/TypeScript frontend (in `/home/emilh/inhouse-E6/frontend`, built with Lovable/Vite).
@@ -24,7 +28,10 @@ Player's Dota client → POST /gsi → Go HTTP server → SQLite (data/inhouse.d
 
 | Method | Path | Description |
 |--------|------|-------------|
+| GET | /healthz | Health check — returns `{"status":"ok"}` |
+| GET | /api | Endpoint spec — lists all routes and response shapes |
 | POST | /gsi | GSI payload ingest from Dota clients |
+| POST | /api/register | Register a new player — takes `{steam_id, display_name}`, returns `{token}`. Open, no auth required. 409 if Steam ID already registered. |
 | GET | /api/matches | List matches with team player names |
 | GET | /api/matches/{id} | Match detail + scoreboard |
 | GET | /api/players | Player leaderboard (wins/losses/streak/GPM) |
@@ -33,7 +40,9 @@ Player's Dota client → POST /gsi → Go HTTP server → SQLite (data/inhouse.d
 
 CORS is open (`*`) so the frontend can call from any origin.
 
-**Frontend connection:** Set `API_BASE` in `frontend/src/lib/api.ts` to the backend URL. Currently `""` (uses mock data). Flip to the live server URL to go live.
+**Live URL:** `https://inhousee4-production.up.railway.app`
+
+**Frontend connection:** `API_BASE` in `frontend/src/lib/api.ts` — set to the origin only (no trailing `/api`). The fetch calls append `/api/...` themselves.
 
 **Key dependencies:**
 - `github.com/go-chi/chi/v5` — HTTP routing
@@ -66,13 +75,14 @@ Post-game detection: when `map.game_state == "DOTA_GAMERULES_STATE_POST_GAME"`, 
 | `cmd/datagen/main.go` | **Dev only** — fake GSI generator for 10 simulated players |
 | `internal/db/` | SQLite layer: schema, queries, types (all types have JSON tags) |
 | `internal/gsi/handler.go` | `POST /gsi` — auth, snapshot insert, post-game detection |
-| `internal/web/handlers.go` | JSON API handlers for all 5 `/api/*` endpoints |
+| `internal/web/handlers.go` | JSON API handlers for all `/api/*` endpoints |
 | `internal/web/routes.go` | Chi router — GSI ingest + API routes + CORS middleware |
 | `gsi/main.go` | Original local GSI debug receiver (reference only, not used in prod) |
 | `data/` | SQLite database files — gitignored |
 | `.env` | Steam credentials — gitignored |
 | `Dockerfile` | Builds `cmd/server` only (datagen is never included) |
-| `fly.toml` | Fly.io config — `ams` region, volume mount at `/data` |
+| `railway.toml` | Railway config — health check path `/healthz`, timeout 30s |
+| `fly.toml` | Old Fly.io config — kept for reference but not used |
 
 ## TODO.md
 
@@ -110,27 +120,45 @@ go run ./cmd/datagen
 ```
 
 After `stop`, hit `http://localhost:8080/api/players` or `/api/matches` to verify stats.
-To see the UI, also run the frontend (`cd ../frontend && npm run dev`) and set `API_BASE = "http://localhost:8080"` in `frontend/src/lib/api.ts`.
+To see the UI: run the frontend (`cd ../frontend && npm run dev`). The frontend reads `VITE_API_BASE` from `frontend/.env.local` — set it to `http://localhost:8080` for local dev or the Railway URL for production.
 
 ## Deploying
 
+Hosted on Railway, auto-deploys on push to `main` via GitHub Actions.
+
 ```bash
-fly launch    # first time only
-fly deploy
+git push   # triggers a Railway build and deploy automatically
 ```
 
-The Dockerfile builds only `cmd/server`. `DB_PATH` defaults to `/data/inhouse.db` which is the mounted Fly.io volume.
+Railway project: `inhouse-e4` (emilhasslof's workspace)
+Live URL: `https://inhousee4-production.up.railway.app`
+
+**Environment variables on Railway:**
+- `APP_ENV=development` — seeds 10 players + 3 fake matches on boot (remove when going live with real players)
+- `DB_PATH=/data/inhouse.db` — set this when a persistent volume is attached
+
+**No persistent volume yet** — DB lives in ephemeral container storage and resets on each deploy. Add a Railway volume mounted at `/data` before running real matches.
+
+**Simulating matches against production:**
+```bash
+go run ./cmd/datagen -target https://inhousee4-production.up.railway.app
+```
 
 ## Adding Real Players
 
-Insert directly into SQLite (generate tokens with `openssl rand -hex 16`):
+Players self-register via `register.bat` (lives at the repo root, outside the backend folder — not deployed). The script:
+1. Reads the player's Steam ID from `loginusers.vdf` automatically
+2. Prompts for a display name
+3. POSTs to `POST /api/register` — backend generates a random token and inserts the player row
+4. Writes the GSI config file to the correct Dota install folder
 
+Registration is open — no admin secret required. If a Steam ID is already registered, the endpoint returns 409.
+
+Manual fallback (if needed):
 ```sql
 INSERT INTO players (steam_id, display_name, token)
 VALUES ('76561197990491029', 'PlayerName', 'abc123...');
 ```
-
-Distribute a personalised GSI config to each player with their token in the `auth` block.
 
 ## Key Findings / Dead Ends
 

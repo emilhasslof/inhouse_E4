@@ -155,6 +155,30 @@ func (h *Handler) HeroStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, stats)
 }
 
+// Register handles POST /api/register
+func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		SteamID     string `json:"steam_id"`
+		DisplayName string `json:"display_name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	if body.SteamID == "" || body.DisplayName == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "steam_id and display_name are required"})
+		return
+	}
+
+	player, err := h.db.RegisterPlayer(r.Context(), body.SteamID, body.DisplayName)
+	if err != nil {
+		log.Printf("[api] register player %s: %v", body.SteamID, err)
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "player already registered"})
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{"token": player.Token})
+}
+
 // LeagueOverview handles GET /api/stats/overview
 func (h *Handler) LeagueOverview(w http.ResponseWriter, r *http.Request) {
 	ov, err := h.db.GetLeagueOverview(r.Context())
