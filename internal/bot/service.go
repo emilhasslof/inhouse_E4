@@ -4,6 +4,11 @@ package bot
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/base64"
+	"encoding/binary"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -12,9 +17,11 @@ import (
 	"time"
 
 	dota2 "github.com/paralin/go-dota2"
+	"github.com/paralin/go-dota2/cso"
 	"github.com/paralin/go-dota2/events"
 	"github.com/paralin/go-dota2/protocol"
 	steam "github.com/paralin/go-steam"
+	"github.com/paralin/go-steam/protocol/steamlang"
 	"github.com/paralin/go-steam/steamid"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/protobuf/proto"
@@ -22,11 +29,38 @@ import (
 	"github.com/emilh/inhouse-e4/internal/db"
 )
 
+// steamGuardChars is Steam's custom TOTP alphabet.
+var steamGuardChars = []byte("23456789BCDFGHJKMNPQRTVWXY")
+
+// generateSteamCode computes a 5-character Steam Guard code from a
+// base64-encoded shared_secret.
+func generateSteamCode(secret string) (string, error) {
+	key, err := base64.StdEncoding.DecodeString(secret)
+	if err != nil {
+		return "", fmt.Errorf("decode shared_secret: %w", err)
+	}
+	ts := time.Now().Unix() / 30
+	msg := make([]byte, 8)
+	binary.BigEndian.PutUint64(msg, uint64(ts))
+	mac := hmac.New(sha1.New, key)
+	mac.Write(msg)
+	sum := mac.Sum(nil)
+	offset := sum[19] & 0xF
+	code := binary.BigEndian.Uint32(sum[offset:offset+4]) & 0x7FFFFFFF
+	result := make([]byte, 5)
+	for i := 0; i < 5; i++ {
+		result[i] = steamGuardChars[code%uint32(len(steamGuardChars))]
+		code /= uint32(len(steamGuardChars))
+	}
+	return string(result), nil
+}
+
 // Service maintains a persistent Steam + Dota2 GC connection and can create
 // lobbies and invite players on demand.
 type Service struct {
 	username   string
 	password   string
+	totpSecret string
 	lobbyName  string
 	lobbyPass  string
 
@@ -37,6 +71,7 @@ type Service struct {
 	gcReadyOnce sync.Once
 
 	botAccountID atomic.Uint32
+	onConnected  func() // called once on first ConnectedEvent
 }
 
 // New reads credentials from the environment and returns a Service ready to
@@ -56,14 +91,81 @@ func New() *Service {
 	d := dota2.New(client, logger)
 
 	return &Service{
-		username:  username,
-		password:  password,
-		lobbyName: getEnvOr("LOBBY_NAME", "E4 Inhouse"),
-		lobbyPass: getEnvOr("LOBBY_PASSWORD", "inhouse"),
+		username:   username,
+		password:   password,
+		totpSecret: os.Getenv("STEAM_TOTP_SECRET"),
+		lobbyName:  getEnvOr("LOBBY_NAME", "E4 Inhouse"),
+		lobbyPass:  getEnvOr("LOBBY_PASSWORD", "inhouse"),
 		client:    client,
 		dota:      d,
 		gcReady:   make(chan struct{}),
 	}
+}
+
+// connectWithRetry dials a CM server in a goroutine and retries every 3s if
+// the dial hangs. This works around net.DialTCP having no built-in timeout.
+func (s *Service) connectWithRetry(ctx context.Context) {
+	connected := make(chan struct{}, 1)
+	s.onConnected = func() {
+		select {
+		case connected <- struct{}{}:
+		default:
+		}
+	}
+
+	attempt := 0
+	for {
+		attempt++
+		log.Printf("[bot] connecting to Steam (attempt %d)...", attempt)
+
+		dialDone := make(chan struct{}, 1)
+		go func() {
+			s.client.Connect()
+			select {
+			case dialDone <- struct{}{}:
+			default:
+			}
+		}()
+
+		select {
+		case <-connected:
+			return // ConnectedEvent fired — success
+		case <-dialDone:
+			// Dial returned but no ConnectedEvent yet — wait briefly
+			select {
+			case <-connected:
+				return
+			case <-time.After(3 * time.Second):
+				log.Printf("[bot] no response from CM — retrying (attempt %d)", attempt+1)
+			case <-ctx.Done():
+				return
+			}
+		case <-time.After(3 * time.Second):
+			log.Printf("[bot] TCP dial timed out — retrying (attempt %d)", attempt+1)
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// logOn generates a fresh TOTP code (if configured) and calls LogOn.
+func (s *Service) logOn() {
+	var twoFactorCode string
+	if s.totpSecret != "" {
+		code, err := generateSteamCode(s.totpSecret)
+		if err != nil {
+			log.Printf("[bot] generate TOTP code: %v", err)
+			return
+		}
+		twoFactorCode = code
+		log.Printf("[bot] logging in with TOTP code: %s", twoFactorCode)
+	}
+	s.client.Auth.LogOn(&steam.LogOnDetails{
+		Username:               s.username,
+		Password:               s.password,
+		TwoFactorCode:          twoFactorCode,
+		ShouldRememberPassword: true,
+	})
 }
 
 // Start connects to Steam and runs the event loop. It blocks until ctx is
@@ -75,16 +177,30 @@ func (s *Service) Start(ctx context.Context) {
 
 			case *steam.ConnectedEvent:
 				log.Println("[bot] connected to Steam, logging in...")
-				s.client.Auth.LogOn(&steam.LogOnDetails{
-					Username: s.username,
-					Password: s.password,
-				})
+				if s.onConnected != nil {
+					s.onConnected()
+				}
+				s.logOn()
 
 			case *steam.LoggedOnEvent:
 				log.Printf("[bot] logged in (steamID: %d)", e.ClientSteamId)
 				s.botAccountID.Store(uint32(e.ClientSteamId))
 				s.client.GC.SetGamesPlayed(uint64(dota2.AppID))
 				s.dota.SayHello()
+				// Retry SayHello every 10s until the GC acknowledges us.
+				go func() {
+					t := time.NewTicker(10 * time.Second)
+					defer t.Stop()
+					for {
+						select {
+						case <-s.gcReady:
+							return
+						case <-t.C:
+							log.Println("[bot] GC not ready yet — retrying SayHello")
+							s.dota.SayHello()
+						}
+					}
+				}()
 
 			case *events.GCConnectionStatusChanged:
 				log.Printf("[bot] GC status: %v", e.NewState)
@@ -93,10 +209,23 @@ func (s *Service) Start(ctx context.Context) {
 				}
 
 			case *steam.LogOnFailedEvent:
-				log.Printf("[bot] login failed: %v — will retry on reconnect", e.Result)
+				if e.Result == steamlang.EResult_TwoFactorCodeMismatch && s.totpSecret != "" {
+					log.Println("[bot] TOTP code mismatch — waiting for next window and retrying...")
+					remaining := time.Now().Unix() % 30
+					time.Sleep(time.Duration(30-remaining+1) * time.Second)
+					s.logOn()
+				} else {
+					log.Printf("[bot] login failed: %v", e.Result)
+				}
 
 			case *steam.DisconnectedEvent:
-				log.Println("[bot] disconnected from Steam")
+				log.Println("[bot] disconnected from Steam — reconnecting in 5s...")
+				time.AfterFunc(5*time.Second, func() {
+					if ctx.Err() == nil {
+						addr := s.client.Connect()
+						log.Printf("[bot] reconnecting to Steam at %v", addr)
+					}
+				})
 
 			case error:
 				log.Printf("[bot] error: %v", e)
@@ -104,8 +233,10 @@ func (s *Service) Start(ctx context.Context) {
 		}
 	}()
 
-	addr := s.client.Connect()
-	log.Printf("[bot] connecting to Steam at %v", addr)
+	// Connect in a goroutine — net.DialTCP has no timeout and can block for
+	// minutes if a CM server is unresponsive. We retry every 15s so a single
+	// stale dial doesn't hold us up.
+	go s.connectWithRetry(ctx)
 
 	<-ctx.Done()
 	log.Println("[bot] context cancelled, disconnecting")
@@ -135,11 +266,21 @@ func (s *Service) CreateLobbyAndInvite(players []db.Player) {
 		AllowSpectating: proto.Bool(true),
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	if err := s.dota.LeaveCreateLobby(ctx, details, true); err != nil {
-		log.Printf("[bot] create lobby: %v", err)
+	var lobbyErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		lobbyErr = s.dota.LeaveCreateLobby(ctx, details, true)
+		cancel()
+		if lobbyErr == nil {
+			break
+		}
+		log.Printf("[bot] create lobby attempt %d/3: %v", attempt, lobbyErr)
+		if attempt < 3 {
+			time.Sleep(3 * time.Second)
+		}
+	}
+	if lobbyErr != nil {
+		log.Printf("[bot] create lobby failed after 3 attempts: %v", lobbyErr)
 		return
 	}
 	log.Printf("[bot] lobby created: %q (pass: %q)", s.lobbyName, s.lobbyPass)
@@ -152,6 +293,49 @@ func (s *Service) CreateLobbyAndInvite(players []db.Player) {
 		}
 		s.dota.InviteLobbyMember(sid)
 		log.Printf("[bot] invited %s (%s) to lobby", p.DisplayName, p.SteamID)
+	}
+
+	// Leave the lobby as soon as any non-bot player joins.
+	go s.leaveWhenPlayerJoins()
+}
+
+// leaveWhenPlayerJoins polls the lobby SOCache and calls LeaveLobby the moment
+// a player other than the bot appears in the members list.
+func (s *Service) leaveWhenPlayerJoins() {
+	lobbyCtr, err := s.dota.GetCache().GetContainerForTypeID(uint32(cso.Lobby))
+	if err != nil {
+		log.Printf("[bot] get lobby cache: %v", err)
+		return
+	}
+
+	botID := s.botAccountID.Load()
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	timeout := time.After(4 * time.Hour)
+
+	for {
+		select {
+		case <-ticker.C:
+			obj := lobbyCtr.GetOne()
+			if obj == nil {
+				continue
+			}
+			lobby, ok := obj.(*protocol.CSODOTALobby)
+			if !ok {
+				continue
+			}
+			for _, m := range lobby.GetAllMembers() {
+				if uint32(m.GetId()) != botID {
+					log.Printf("[bot] player joined (accountID=%d) — leaving lobby", m.GetId())
+					s.dota.LeaveLobby()
+					return
+				}
+			}
+		case <-timeout:
+			log.Println("[bot] nobody joined within 4 hours — leaving lobby")
+			s.dota.LeaveLobby()
+			return
+		}
 	}
 }
 

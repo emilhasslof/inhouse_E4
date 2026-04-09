@@ -157,6 +157,25 @@ func (h *Handler) HeroStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, stats)
 }
 
+// RegisteredPlayers handles GET /api/registered-players
+func (h *Handler) RegisteredPlayers(w http.ResponseWriter, r *http.Request) {
+	players, err := h.db.ListRegisteredPlayers(r.Context())
+	if err != nil {
+		log.Printf("[api] list registered players: %v", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	type playerView struct {
+		DisplayName string `json:"display_name"`
+		SteamID     string `json:"steam_id"`
+	}
+	out := make([]playerView, len(players))
+	for i, p := range players {
+		out[i] = playerView{DisplayName: p.DisplayName, SteamID: p.SteamID}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 // Register handles POST /api/register
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	var body struct {
