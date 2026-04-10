@@ -1,0 +1,117 @@
+{
+  "map": {
+    "name": "start",
+    "matchid": "8766267743",
+    "game_time": 19,
+    "clock_time": -34,
+    "daytime": false,
+    "nightstalker_night": false,
+    "radiant_score": 0,
+    "dire_score": 0,
+    "game_state": "DOTA_GAMERULES_STATE_STRATEGY_TIME",
+    "paused": false,
+    "win_team": "none",
+    "customgamename": "",
+    "ward_purchase_cooldown": 0
+  },
+  "player": {
+    "steamid": "76561197990491029",
+    "accountid": "30225301",
+    "name": "HACKERMAN",
+    "activity": "playing",
+    "kills": 0,
+    "deaths": 0,
+    "assists": 0,
+    "last_hits": 0,
+    "denies": 0,
+    "kill_streak": 0,
+    "commands_issued": 0,
+    "kill_list": {},
+    "team_name": "radiant",
+    "player_slot": 1,
+    "team_slot": 0,
+    "gold": 600,
+    "gold_reliable": 0,
+    "gold_unreliable": 600,
+    "gold_from_hero_kills": 0,
+    "gold_from_creep_kills": 0,
+    "gold_from_income": 0,
+    "gold_from_shared": 0,
+    "gpm": 0,
+    "xpm": 0
+  },
+  "hero": {
+    "facet": 0,
+    "id": 52,
+    "name": "npc_dota_hero_leshrac"
+  },
+  "abilities": {},
+  "items": {},
+  "draft": {},
+  "buildings": {
+    "radiant": {}
+  },
+  "minimap": {
+    "o0": {
+      "xpos": 0,
+      "ypos": 0,
+      "image": "minimap_plaincircle",
+      "team": 2,
+      "yaw": 0,
+      "unitname": "npc_dota_hero_leshrac",
+      "visionrange": 0
+    },
+    "o1": {
+      "xpos": 0,
+      "ypos": 0,
+      "image": "minimap_plaincircle",
+      "team": 2,
+      "yaw": 0,
+      "unitname": "npc_dota_hero_leshrac",
+      "visionrange": 0
+    }
+  },
+  "wearables": {
+    "wearable0": 570,
+    "wearable1": 12933,
+    "wearable2": 4990,
+    "wearable3": 347,
+    "wearable4": 591,
+    "wearable5": 8632,
+    "wearable6": 529,
+    "wearable9": 816
+  },
+  "previously": {
+    "map": {
+      "game_time": 18,
+      "clock_time": -65,
+      "game_state": "DOTA_GAMERULES_STATE_HERO_SELECTION"
+    },
+    "hero": {
+      "id": 0
+    }
+  },
+  "added": {
+    "hero": {
+      "facet": true,
+      "name": true
+    },
+    "minimap": {
+      "o0": true,
+      "o1": true
+    },
+    "wearables": {
+      "wearable0": true,
+      "wearable1": true,
+      "wearable2": true,
+      "wearable3": true,
+      "wearable4": true,
+      "wearable5": true,
+      "wearable6": true,
+      "wearable9": true
+    }
+  },
+  "auth": {
+    "token": "capture"
+  }
+}
