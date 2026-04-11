@@ -7,6 +7,8 @@ Mark items done with `[x]` when complete, or remove them.
 
 ## Up next
 
+- [ ] **Fix GC wait blocking lobby creation** — `CreateLobbyAndInvite` waits 60s for `GCConnectionStatus_HAVE_SESSION` before attempting `LeaveCreateLobby`. In practice `HAVE_SESSION` never fires reliably on Railway (known `unknown shared object type id: 2013` issue), causing the lobby create to time out and the match gate to never open. Fix: remove the gcReady wait and call `LeaveCreateLobby` directly — it works regardless of GC session state.
+
 ## Backlog
 
 - [ ] **Raise match confirmation threshold back to 2 (or more) before going live** — currently set to 1 for solo testing. See `internal/match/gate.go:confirmThreshold`.
@@ -19,6 +21,7 @@ Mark items done with `[x]` when complete, or remove them.
 
 ## Done
 
+- [x] Schema migration added for `win_team` column — `ALTER TABLE` runs on startup so existing DBs are upgraded without needing a full wipe.
 - [x] Win/loss determination now uses `win_team` from GSI POST_GAME packets instead of kill score comparison.
 - [x] Lobby cheats always enabled; `POST /api/lobby/create` accepts `game_mode: "captains_mode" | "all_pick"` (default: captains_mode).
 - [x] Match gate confirmation threshold lowered to 2 players.

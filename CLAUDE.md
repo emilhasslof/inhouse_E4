@@ -97,7 +97,7 @@ Post-game detection: when `map.game_state == "DOTA_GAMERULES_STATE_POST_GAME"`, 
 
 ## Git Workflow
 
-**Never commit directly to `main`.** Always work on a branch and open a PR.
+**Work on `dev`.** Commit to `dev` during development. Merge `dev` → `main` when ready to deploy (triggers Railway). Direct commits to `main` only for urgent hotfixes when explicitly asked.
 
 **Branch naming:**
 - `feature/short-description` — new functionality
@@ -128,7 +128,7 @@ To see the UI: run the frontend (`cd ../frontend && npm run dev`). The frontend 
 
 ## Deploying
 
-Hosted on Railway, auto-deploys on push to `main` via GitHub Actions.
+Hosted on Railway, auto-deploys on push to `main` via Railway's GitHub integration (not GitHub Actions — there are no workflow files).
 
 ```bash
 git push   # triggers a Railway build and deploy automatically
@@ -170,6 +170,13 @@ VALUES ('76561197990491029', 'PlayerName', 'abc123...');
 - `win_team` is captured from `map.win_team` in POST_GAME packets and stored in the `matches` table. All win/loss queries use `mps.team_name = m.win_team` — not kill score comparison.
 - Lobby cheats are always enabled (`AllowCheats: true`). Game mode defaults to Captain's Mode; pass `game_mode: "all_pick"` to override.
 - Register scripts (`register.sh` / `register.bat`) use the Steam persona name from `loginusers.vdf` — no manual name entry. Already-registered players still get the bot friend prompt.
+
+## Schema Migrations
+
+`CREATE TABLE IF NOT EXISTS` in `schemaSQL` only creates tables on first run — it does not add new columns to existing tables. New columns must be added as `ALTER TABLE ... ADD COLUMN` statements in the `additiveMigrations` slice in `db.go:migrate()`. These are safe to re-run (SQLite's "duplicate column name" error is swallowed).
+
+**Migrated columns so far:**
+- `matches.win_team TEXT NOT NULL DEFAULT ''` — added after initial schema, captures winning team from GSI POST_GAME.
 
 ## Key Findings / Dead Ends
 
