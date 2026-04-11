@@ -97,7 +97,7 @@ Post-game detection: when `map.game_state == "DOTA_GAMERULES_STATE_POST_GAME"`, 
 
 ## Git Workflow
 
-**Never commit directly to `main`.** Always work on a branch and open a PR.
+**Work on `dev`.** Commit to `dev` during development. Merge `dev` → `main` when ready to deploy (triggers Railway). Direct commits to `main` only for urgent hotfixes when explicitly asked.
 
 **Branch naming:**
 - `feature/short-description` — new functionality
@@ -128,7 +128,7 @@ To see the UI: run the frontend (`cd ../frontend && npm run dev`). The frontend 
 
 ## Deploying
 
-Hosted on Railway, auto-deploys on push to `main` via GitHub Actions.
+Hosted on Railway, auto-deploys on push to `main` via Railway's GitHub integration (not GitHub Actions — there are no workflow files).
 
 ```bash
 git push   # triggers a Railway build and deploy automatically
