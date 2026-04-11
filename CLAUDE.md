@@ -185,6 +185,14 @@ VALUES ('76561197990491029', 'PlayerName', 'abc123...');
 - **Consequence:** all 10 players must have GSI configured and active to get complete match stats. There is no shortcut.
 - An observer bot was considered and ruled out — too complex. GSI from players is the only data source.
 
+### Steam bot GC connection on Railway
+- Railway blocks some Steam CM ports (e.g. 27017 on certain IPs). The initial connect often succeeds then immediately gets EOF (CM redirect), and subsequent reconnects to specific IPs time out.
+- **Fix:** `DisconnectedEvent` handler calls `go connectWithRetry(ctx)` instead of a one-shot `s.client.Connect()`. `connectWithRetry` retries indefinitely against different CMs until one responds.
+- `gcReady`/`gcReadyOnce` must be reset on each `LoggedOnEvent` — if not, a reconnect's SayHello goroutine exits immediately (old channel already closed) and `CreateLobbyAndInvite` skips the GC wait, leading to undefined behaviour.
+- `go-dota2` emits `unknown shared object type id: 2013` warnings when it can't parse a GC welcome cache message. This prevents `GCConnectionStatus_HAVE_SESSION` from being dispatched reliably. Lobby creation still works (GC responds to `LeaveCreateLobby`), but Dota lobby chat events (`events.ChatMessage`) may not arrive.
+- **`!start` fallback:** also listen on `*steam.ChatMsgEvent` (Steam direct DM) so players can trigger lobby launch regardless of GC session state.
+- `lobbyMu` must stay held for the full lobby lifetime (creation + `waitForStart`). Releasing it after launch allows a rapid second POST to call `LeaveCreateLobby` concurrently, stomping the active lobby.
+
 ### GSI data quality notes
 - `gpm` and `xpm` are wildly inflated for the first ~10 seconds of `clock_time`. Always guard sampling with `clock_time > 10`.
 - `player.kill_list` maps victim slot → kill count within the current kill streak. It resets to empty when the player dies. Useful for detecting kill events by diffing successive snapshots.

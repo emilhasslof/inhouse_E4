@@ -246,16 +246,16 @@ func (s *Service) Start(ctx context.Context) {
 
 			case *events.ChatMessage:
 				if e.GetText() == "!start" {
-					log.Printf("[bot] !start received from %s", e.GetPersonaName())
-					s.startMu.Lock()
-					ch := s.startCh
-					s.startMu.Unlock()
-					if ch != nil {
-						select {
-						case ch <- struct{}{}:
-						default:
-						}
-					}
+					log.Printf("[bot] !start received (GC chat) from %s", e.GetPersonaName())
+					s.signalStart()
+				}
+
+			// Also accept !start via Steam direct message, which works
+			// regardless of GC session state.
+			case *steam.ChatMsgEvent:
+				if e.IsMessage() && e.Message == "!start" {
+					log.Printf("[bot] !start received (Steam DM) from %d", e.ChatterId)
+					s.signalStart()
 				}
 
 			case *steam.FriendStateEvent:
@@ -377,7 +377,11 @@ func (s *Service) CreateLobbyAndInvite(players []db.Player) {
 	resetCh := s.resetCh
 	s.startMu.Unlock()
 
-	go s.waitForStart(ch, resetCh)
+	// Call inline (not goroutine) so lobbyMu stays held until the lobby is
+	// fully done. CreateLobbyAndInvite is already running in its own goroutine
+	// (see web/handlers.go), so blocking here is safe and prevents a second
+	// POST from starting a new LeaveCreateLobby while one is active.
+	s.waitForStart(ch, resetCh)
 }
 
 // waitForStart blocks until !start is received in lobby chat, then opens the
@@ -406,6 +410,19 @@ func (s *Service) waitForStart(startCh chan struct{}, resetCh chan struct{}) {
 }
 
 
+
+// signalStart sends to startCh if a lobby is currently waiting for !start.
+func (s *Service) signalStart() {
+	s.startMu.Lock()
+	ch := s.startCh
+	s.startMu.Unlock()
+	if ch != nil {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+}
 
 func parseSteamID(s string) (steamid.SteamId, error) {
 	id, err := strconv.ParseUint(s, 10, 64)
