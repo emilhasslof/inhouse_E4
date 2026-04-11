@@ -17,6 +17,10 @@ Mark items done with `[x]` when complete, or remove them.
 
 ## Done
 
+- [x] Win/loss determination now uses `win_team` from GSI POST_GAME packets instead of kill score comparison.
+- [x] Lobby cheats always enabled; `POST /api/lobby/create` accepts `game_mode: "captains_mode" | "all_pick"` (default: captains_mode).
+- [x] Match gate confirmation threshold lowered to 2 players.
+- [x] Register scripts use Steam persona name automatically — no manual name entry, fixes Å/Ä/Ö encoding issues.
 - [x] Bot GC reconnect hardening — `DisconnectedEvent` now calls `connectWithRetry` (full retry loop) instead of a one-shot `Connect()`. `gcReady`/`gcAbort` channels are reset on each `LoggedOnEvent` so reconnects get a fresh GC session. `lobbyMu` is now held for the entire lobby lifetime (creation + `!start` wait) to prevent concurrent `LeaveCreateLobby` calls from multiple frontend POSTs. `!start` now also accepted via Steam direct message (independent of GC session state).
 - [x] Draft tracking — `match_draft` table + `GET /api/matches/{id}/draft`. Populated from POST_GAME GSI packets (Captain's Mode only — All Pick has no draft block). team3=radiant, team2=dire per Dota 2 internal numbering.
 - [x] Bot hard reset endpoint — `POST /api/lobby/reset` tears down the Steam connection and reconnects from scratch. Implemented via `bot.Manager` which owns the `Service` lifecycle.
