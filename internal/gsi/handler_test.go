@@ -13,9 +13,18 @@ import (
 
 	"github.com/emilh/inhouse-e4/internal/db"
 	"github.com/emilh/inhouse-e4/internal/gsi"
+	"github.com/emilh/inhouse-e4/internal/match"
 )
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// openGate returns a match gate that is already open, for use in tests that
+// exercise GSI processing directly without going through the bot flow.
+func openGate() *match.Gate {
+	g := new(match.Gate)
+	g.Open()
+	return g
+}
 
 func newSeededDB(t *testing.T) *db.DB {
 	t.Helper()
@@ -82,11 +91,32 @@ func postGamePayload(token, matchID string) map[string]any {
 	return p
 }
 
+// confirmMatch sends minimal in-progress packets from 3 different registered
+// players so the gate locks to matchID. The first two packets are silently
+// dropped; the third tips the count and the gate locks — subsequent sends are
+// accepted normally. Requires a seeded DB (datagen-radiant-1/2/3 must exist).
+func confirmMatch(t *testing.T, h *gsi.Handler, matchID string) {
+	t.Helper()
+	for _, token := range []string{"datagen-radiant-1", "datagen-radiant-2", "datagen-radiant-3"} {
+		sendGSI(t, h, map[string]any{
+			"auth": map[string]any{"token": token},
+			"map": map[string]any{
+				"matchid":    matchID,
+				"clock_time": 30,
+				"game_time":  30,
+				"game_state": "DOTA_GAMERULES_STATE_GAME_IN_PROGRESS",
+			},
+			"player": map[string]any{},
+			"hero":   map[string]any{},
+		})
+	}
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 func TestReceive_UnknownToken(t *testing.T) {
 	d := newSeededDB(t)
-	h := gsi.New(d)
+	h := gsi.New(d, openGate())
 
 	resp := sendGSI(t, h, map[string]any{
 		"auth": map[string]any{"token": "not-a-real-token"},
@@ -96,7 +126,7 @@ func TestReceive_UnknownToken(t *testing.T) {
 
 func TestReceive_NoMatchID(t *testing.T) {
 	d := newSeededDB(t)
-	h := gsi.New(d)
+	h := gsi.New(d, openGate())
 
 	resp := sendGSI(t, h, map[string]any{
 		"auth": map[string]any{"token": "datagen-radiant-1"},
@@ -111,7 +141,8 @@ func TestReceive_NoMatchID(t *testing.T) {
 
 func TestReceive_InProgress(t *testing.T) {
 	d := newSeededDB(t)
-	h := gsi.New(d)
+	h := gsi.New(d, openGate())
+	confirmMatch(t, h, "match-live-001")
 
 	resp := sendGSI(t, h, inProgressPayload("datagen-radiant-1", "match-live-001"))
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
@@ -130,8 +161,9 @@ func TestReceive_InProgress(t *testing.T) {
 
 func TestReceive_PostGame(t *testing.T) {
 	d := newSeededDB(t)
-	h := gsi.New(d)
+	h := gsi.New(d, openGate())
 	ctx := context.Background()
+	confirmMatch(t, h, "match-pg-001")
 
 	resp := sendGSI(t, h, postGamePayload("datagen-radiant-1", "match-pg-001"))
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
@@ -153,8 +185,9 @@ func TestReceive_PostGame(t *testing.T) {
 
 func TestReceive_PostGame_Idempotent(t *testing.T) {
 	d := newSeededDB(t)
-	h := gsi.New(d)
+	h := gsi.New(d, openGate())
 	ctx := context.Background()
+	confirmMatch(t, h, "match-idem-001")
 
 	payload := postGamePayload("datagen-radiant-1", "match-idem-001")
 	sendGSI(t, h, payload)
@@ -174,7 +207,7 @@ func TestReceive_PostGame_Idempotent(t *testing.T) {
 
 func TestReceive_InvalidJSON(t *testing.T) {
 	d := newSeededDB(t)
-	h := gsi.New(d)
+	h := gsi.New(d, openGate())
 
 	req := httptest.NewRequest(http.MethodPost, "/gsi", bytes.NewBufferString("not json {{{"))
 	w := httptest.NewRecorder()

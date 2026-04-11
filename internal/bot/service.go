@@ -17,7 +17,6 @@ import (
 	"time"
 
 	dota2 "github.com/paralin/go-dota2"
-	"github.com/paralin/go-dota2/cso"
 	"github.com/paralin/go-dota2/events"
 	"github.com/paralin/go-dota2/protocol"
 	steam "github.com/paralin/go-steam"
@@ -27,6 +26,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/emilh/inhouse-e4/internal/db"
+	"github.com/emilh/inhouse-e4/internal/match"
 )
 
 // steamGuardChars is Steam's custom TOTP alphabet.
@@ -63,6 +63,7 @@ type Service struct {
 	totpSecret string
 	lobbyName  string
 	lobbyPass  string
+	gate       *match.Gate
 
 	client *steam.Client
 	dota   *dota2.Dota2
@@ -72,11 +73,15 @@ type Service struct {
 
 	botAccountID atomic.Uint32
 	onConnected  func() // called once on first ConnectedEvent
+
+	// startMu guards startCh, which is recreated for each lobby.
+	startMu sync.Mutex
+	startCh chan struct{}
 }
 
 // New reads credentials from the environment and returns a Service ready to
 // be started. Call Start in a goroutine after construction.
-func New() *Service {
+func New(gate *match.Gate) *Service {
 	username := os.Getenv("STEAM_ACCOUNT_NAME")
 	password := os.Getenv("STEAM_PASSWORD")
 	if username == "" || password == "" {
@@ -96,9 +101,10 @@ func New() *Service {
 		totpSecret: os.Getenv("STEAM_TOTP_SECRET"),
 		lobbyName:  getEnvOr("LOBBY_NAME", "E4 Inhouse"),
 		lobbyPass:  getEnvOr("LOBBY_PASSWORD", "inhouse"),
-		client:    client,
-		dota:      d,
-		gcReady:   make(chan struct{}),
+		gate:       gate,
+		client:     client,
+		dota:       d,
+		gcReady:    make(chan struct{}),
 	}
 }
 
@@ -208,6 +214,20 @@ func (s *Service) Start(ctx context.Context) {
 					s.gcReadyOnce.Do(func() { close(s.gcReady) })
 				}
 
+			case *events.ChatMessage:
+				if e.GetText() == "!start" {
+					log.Printf("[bot] !start received from %s", e.GetPersonaName())
+					s.startMu.Lock()
+					ch := s.startCh
+					s.startMu.Unlock()
+					if ch != nil {
+						select {
+						case ch <- struct{}{}:
+						default:
+						}
+					}
+				}
+
 			case *steam.FriendStateEvent:
 				if e.Relationship == steamlang.EFriendRelationship_RequestRecipient {
 					log.Printf("[bot] incoming friend request from %d — accepting", e.SteamId)
@@ -250,7 +270,9 @@ func (s *Service) Start(ctx context.Context) {
 }
 
 // CreateLobbyAndInvite waits for the GC to be ready, creates a practice lobby,
-// then sends a lobby invite to each player's Steam account. Designed to run in
+// kicks the bot out of its team slot so it doesn't block a player slot, sends
+// lobby invites to each player, then listens for !start in lobby chat. When
+// !start is received the gate opens and the lobby launches. Designed to run in
 // a goroutine — errors are logged, not returned.
 func (s *Service) CreateLobbyAndInvite(players []db.Player) {
 	select {
@@ -291,6 +313,12 @@ func (s *Service) CreateLobbyAndInvite(players []db.Player) {
 	}
 	log.Printf("[bot] lobby created: %q (pass: %q)", s.lobbyName, s.lobbyPass)
 
+	// Kick the bot out of its team slot so it doesn't occupy a player slot.
+	// The bot retains host status and stays in the unassigned pool.
+	botID := s.botAccountID.Load()
+	s.dota.KickLobbyMemberFromTeam(botID)
+	log.Printf("[bot] kicked self from team slot (accountID=%d)", botID)
+
 	for _, p := range players {
 		sid, err := parseSteamID(p.SteamID)
 		if err != nil {
@@ -301,49 +329,37 @@ func (s *Service) CreateLobbyAndInvite(players []db.Player) {
 		log.Printf("[bot] invited %s (%s) to lobby", p.DisplayName, p.SteamID)
 	}
 
-	// Leave the lobby as soon as any non-bot player joins.
-	go s.leaveWhenPlayerJoins()
+	// Create a fresh channel for this lobby's !start signal.
+	ch := make(chan struct{}, 1)
+	s.startMu.Lock()
+	s.startCh = ch
+	s.startMu.Unlock()
+
+	go s.waitForStart(ch)
 }
 
-// leaveWhenPlayerJoins polls the lobby SOCache and calls LeaveLobby the moment
-// a player other than the bot appears in the members list.
-func (s *Service) leaveWhenPlayerJoins() {
-	lobbyCtr, err := s.dota.GetCache().GetContainerForTypeID(uint32(cso.Lobby))
-	if err != nil {
-		log.Printf("[bot] get lobby cache: %v", err)
-		return
-	}
-
-	botID := s.botAccountID.Load()
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
+// waitForStart blocks until !start is received in lobby chat, then opens the
+// match gate and launches the lobby. Exits on timeout (4 hours).
+func (s *Service) waitForStart(startCh chan struct{}) {
+	log.Println("[bot] waiting for !start in lobby chat...")
 	timeout := time.After(4 * time.Hour)
 
-	for {
-		select {
-		case <-ticker.C:
-			obj := lobbyCtr.GetOne()
-			if obj == nil {
-				continue
-			}
-			lobby, ok := obj.(*protocol.CSODOTALobby)
-			if !ok {
-				continue
-			}
-			for _, m := range lobby.GetAllMembers() {
-				if uint32(m.GetId()) != botID {
-					log.Printf("[bot] player joined (accountID=%d) — leaving lobby", m.GetId())
-					s.dota.LeaveLobby()
-					return
-				}
-			}
-		case <-timeout:
-			log.Println("[bot] nobody joined within 4 hours — leaving lobby")
-			s.dota.LeaveLobby()
-			return
-		}
+	select {
+	case <-startCh:
+		s.gate.Open()
+		s.dota.LaunchLobby()
+		log.Println("[bot] lobby launched — match gate open")
+
+	case <-timeout:
+		log.Println("[bot] !start not received within 4 hours — giving up")
 	}
+
+	// Clear the channel so stale !start signals don't affect the next lobby.
+	s.startMu.Lock()
+	s.startCh = nil
+	s.startMu.Unlock()
 }
+
 
 func parseSteamID(s string) (steamid.SteamId, error) {
 	id, err := strconv.ParseUint(s, 10, 64)

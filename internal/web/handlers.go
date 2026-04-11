@@ -9,19 +9,26 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/emilh/inhouse-e4/internal/bot"
 	"github.com/emilh/inhouse-e4/internal/db"
 )
+
+// LobbyCreator is the subset of bot.Service used by the web handlers.
+// Defined as an interface so the web package does not need to import bot,
+// keeping go-steam out of test binaries.
+type LobbyCreator interface {
+	CreateLobbyAndInvite(players []db.Player)
+}
 
 // Handler serves the JSON API backed by the database.
 type Handler struct {
 	db  *db.DB
-	bot *bot.Service
+	bot LobbyCreator
 }
 
-// New creates an API handler.
-func New(database *db.DB, botSvc *bot.Service) *Handler {
-	return &Handler{db: database, bot: botSvc}
+// New creates an API handler. Pass nil for bot when the Steam bot is not
+// configured — lobby creation will be silently skipped.
+func New(database *db.DB, bot LobbyCreator) *Handler {
+	return &Handler{db: database, bot: bot}
 }
 
 var specJSON = []byte(`{

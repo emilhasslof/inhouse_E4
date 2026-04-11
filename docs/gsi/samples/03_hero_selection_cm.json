@@ -1,0 +1,207 @@
+{
+  "map": {
+    "name": "start",
+    "matchid": "8766287949",
+    "game_time": 535,
+    "clock_time": 0,
+    "daytime": false,
+    "nightstalker_night": false,
+    "radiant_score": 0,
+    "dire_score": 0,
+    "game_state": "DOTA_GAMERULES_STATE_HERO_SELECTION",
+    "paused": false,
+    "win_team": "none",
+    "customgamename": "",
+    "ward_purchase_cooldown": 0
+  },
+  "player": {
+    "steamid": "76561197990491029",
+    "accountid": "30225301",
+    "name": "HACKERMAN",
+    "activity": "playing",
+    "kills": 0,
+    "deaths": 0,
+    "assists": 0,
+    "last_hits": 0,
+    "denies": 0,
+    "kill_streak": 0,
+    "commands_issued": 0,
+    "kill_list": {},
+    "team_name": "radiant",
+    "player_slot": 1,
+    "team_slot": 0,
+    "gold": 600,
+    "gold_reliable": 0,
+    "gold_unreliable": 600,
+    "gold_from_hero_kills": 0,
+    "gold_from_creep_kills": 0,
+    "gold_from_income": 0,
+    "gold_from_shared": 0,
+    "gpm": 0,
+    "xpm": 0
+  },
+  "hero": {
+    "facet": 0,
+    "id": 52,
+    "name": "npc_dota_hero_leshrac"
+  },
+  "abilities": {},
+  "items": {},
+  "draft": {
+    "activeteam": 0,
+    "pick": false,
+    "activeteam_time_remaining": 0,
+    "radiant_bonus_time": 0,
+    "dire_bonus_time": 0,
+    "team2": {
+      "home_team": false,
+      "pick0_id": 82,
+      "pick0_class": "meepo",
+      "pick1_id": 50,
+      "pick1_class": "dazzle",
+      "pick2_id": 21,
+      "pick2_class": "windrunner",
+      "pick3_id": 119,
+      "pick3_class": "dark_willow",
+      "pick4_id": 52,
+      "pick4_class": "leshrac",
+      "ban0_id": 1,
+      "ban0_class": "antimage",
+      "ban1_id": 36,
+      "ban1_class": "necrolyte",
+      "ban2_id": 105,
+      "ban2_class": "techies",
+      "ban3_id": 34,
+      "ban3_class": "tinker",
+      "ban4_id": 88,
+      "ban4_class": "nyx_assassin",
+      "ban5_id": 128,
+      "ban5_class": "snapfire",
+      "ban6_id": 33,
+      "ban6_class": "enigma"
+    },
+    "team3": {
+      "home_team": true,
+      "pick0_id": 137,
+      "pick0_class": "primal_beast",
+      "pick1_id": 63,
+      "pick1_class": "weaver",
+      "pick2_id": 129,
+      "pick2_class": "mars",
+      "pick3_id": 43,
+      "pick3_class": "death_prophet",
+      "pick4_id": 80,
+      "pick4_class": "lone_druid",
+      "ban0_id": 0,
+      "ban0_class": "",
+      "ban1_id": 0,
+      "ban1_class": "",
+      "ban2_id": 0,
+      "ban2_class": "",
+      "ban3_id": 0,
+      "ban3_class": "",
+      "ban4_id": 0,
+      "ban4_class": "",
+      "ban5_id": 0,
+      "ban5_class": "",
+      "ban6_id": 0,
+      "ban6_class": ""
+    }
+  },
+  "buildings": {
+    "radiant": {}
+  },
+  "minimap": {
+    "o0": {
+      "xpos": 0,
+      "ypos": 0,
+      "image": "minimap_plaincircle",
+      "team": 2,
+      "yaw": 0,
+      "unitname": "npc_dota_hero_meepo",
+      "visionrange": 0
+    },
+    "o1": {
+      "xpos": 0,
+      "ypos": 0,
+      "image": "minimap_plaincircle",
+      "team": 2,
+      "yaw": 0,
+      "unitname": "npc_dota_hero_dazzle",
+      "visionrange": 0
+    },
+    "o2": {
+      "xpos": 0,
+      "ypos": 0,
+      "image": "minimap_plaincircle",
+      "team": 2,
+      "yaw": 0,
+      "unitname": "npc_dota_hero_windrunner",
+      "visionrange": 0
+    },
+    "o3": {
+      "xpos": 0,
+      "ypos": 0,
+      "image": "minimap_plaincircle",
+      "team": 2,
+      "yaw": 0,
+      "unitname": "npc_dota_hero_dark_willow",
+      "visionrange": 0
+    },
+    "o4": {
+      "xpos": 0,
+      "ypos": 0,
+      "image": "minimap_plaincircle",
+      "team": 2,
+      "yaw": 0,
+      "unitname": "npc_dota_hero_leshrac",
+      "visionrange": 0
+    },
+    "o5": {
+      "xpos": 0,
+      "ypos": 0,
+      "image": "minimap_plaincircle",
+      "team": 2,
+      "yaw": 0,
+      "unitname": "npc_dota_hero_leshrac",
+      "visionrange": 0
+    },
+    "o6": {
+      "xpos": 0,
+      "ypos": 0,
+      "image": "minimap_plaincircle",
+      "team": 2,
+      "yaw": 0,
+      "unitname": "npc_dota_hero_leshrac",
+      "visionrange": 0
+    },
+    "o7": {
+      "xpos": 0,
+      "ypos": 0,
+      "image": "minimap_plaincircle",
+      "team": 2,
+      "yaw": 0,
+      "unitname": "npc_dota_hero_leshrac",
+      "visionrange": 0
+    }
+  },
+  "wearables": {
+    "wearable0": 570,
+    "wearable1": 12933,
+    "wearable2": 4990,
+    "wearable3": 347,
+    "wearable4": 591,
+    "wearable5": 8632,
+    "wearable6": 529,
+    "wearable9": 816
+  },
+  "previously": {
+    "map": {
+      "game_time": 534,
+      "clock_time": -2
+    }
+  },
+  "auth": {
+    "token": "capture"
+  }
+}

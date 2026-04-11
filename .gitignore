@@ -17,3 +17,5 @@ data/
 # Compiled binaries
 inhouse-buddy-bot
 gsi/gsi-receiver
+/packets
+/capture

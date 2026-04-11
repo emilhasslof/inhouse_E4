@@ -63,8 +63,9 @@ Post-game detection: when `map.game_state == "DOTA_GAMERULES_STATE_POST_GAME"`, 
 |---|---|
 | `players` | Registered players — display name + unique GSI auth token |
 | `matches` | One row per match — state, scores, duration |
-| `gsi_snapshots` | Raw 1-per-second stream per player (future: gold graphs, kill timelines) |
+| `gsi_snapshots` | Raw 1-per-second stream per player — source for gold graphs, kill timelines, kill events |
 | `match_player_stats` | Materialised end-of-match K/D/A/GPM/XPM — what the web pages read |
+| `player_pair_killstreak` | **Planned** — current and all-time peak killstreak for each ordered (killer, victim) player pair, accumulated across matches |
 
 ## File Map
 
@@ -176,7 +177,17 @@ VALUES ('76561197990491029', 'PlayerName', 'abc123...');
 - TOTP code must be generated immediately before `LogOn()`, not at startup — near-expiry codes fail mid-TCP-handshake
 - On `EResult_TwoFactorCodeMismatch`, bot waits for the next 30s window and retries automatically
 
+### GSI `allplayers` is observer-only
+- Confirmed from real captured payloads: `allplayers` is **never present** for a regular player, only for observers with full vision. Valve intentionally gates it.
+- **Consequence:** all 10 players must have GSI configured and active to get complete match stats. There is no shortcut.
+- An observer bot was considered and ruled out — too complex. GSI from players is the only data source.
+
+### GSI data quality notes
+- `gpm` and `xpm` are wildly inflated for the first ~10 seconds of `clock_time`. Always guard sampling with `clock_time > 10`.
+- `player.kill_list` maps victim slot → kill count within the current kill streak. It resets to empty when the player dies. Useful for detecting kill events by diffing successive snapshots.
+- Enemy buildings are not visible in any player's GSI feed (fog of war). Only own-team buildings appear.
+- `draft` block is only populated in Captain's Mode. It is `{}` in All Pick.
+
 ## Open Questions
 
-- Does `allplayers` in GSI include enemy stats for a regular player (not spectator)? If yes, one player's feed is sufficient per match instead of needing all 10. Needs a real match test.
 - Is the Steam bot still needed once GSI is proven? Could players self-host lobbies, or do we keep the bot for consistency?

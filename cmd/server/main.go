@@ -19,6 +19,7 @@ import (
 	"github.com/emilh/inhouse-e4/internal/bot"
 	"github.com/emilh/inhouse-e4/internal/db"
 	"github.com/emilh/inhouse-e4/internal/gsi"
+	"github.com/emilh/inhouse-e4/internal/match"
 	"github.com/emilh/inhouse-e4/internal/web"
 )
 
@@ -35,6 +36,8 @@ func main() {
 	}
 	defer database.Close()
 
+	gate := new(match.Gate)
+
 	if appEnv == "development" {
 		log.Println("[server] APP_ENV=development — seeding players and dev match data")
 		if err := database.Seed(); err != nil {
@@ -43,16 +46,26 @@ func main() {
 		if err := database.SeedDevMatches(); err != nil {
 			log.Printf("[server] seed matches warning: %v", err)
 		}
+		// Open the gate in dev mode so datagen can push packets without a bot.
+		gate.Open()
+		log.Println("[server] dev mode — match gate pre-opened")
 	}
 
 	ctx := context.Background()
-	botSvc := bot.New()
+	botSvc := bot.New(gate)
 	if botSvc != nil {
 		go botSvc.Start(ctx)
 	}
 
-	gsiHandler := gsi.New(database)
-	webHandler := web.New(database, botSvc)
+	gsiHandler := gsi.New(database, gate)
+	// Pass bot as a web.LobbyCreator interface. When botSvc is nil we pass a
+	// typed nil interface value, not a (*bot.Service)(nil) wrapped in an
+	// interface, so the h.bot != nil check in the handler works correctly.
+	var lobbyBot web.LobbyCreator
+	if botSvc != nil {
+		lobbyBot = botSvc
+	}
+	webHandler := web.New(database, lobbyBot)
 	router := web.NewRouter(gsiHandler, webHandler)
 
 	addr := fmt.Sprintf(":%s", port)
