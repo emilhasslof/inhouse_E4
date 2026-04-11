@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS matches (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   dota_match_id   TEXT    NOT NULL UNIQUE,
   state           TEXT    NOT NULL DEFAULT 'in_progress',
+  win_team        TEXT    NOT NULL DEFAULT '',
   radiant_score   INTEGER NOT NULL DEFAULT 0,
   dire_score      INTEGER NOT NULL DEFAULT 0,
   duration_secs   INTEGER NOT NULL DEFAULT 0,

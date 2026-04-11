@@ -60,7 +60,11 @@ func buildCompletedMatch(
 		require.NoError(t, err)
 	}
 
-	err = d.CompleteMatch(ctx, matchID, radiantScore, direScore, durationSecs)
+	winTeam := "radiant"
+	if direScore > radiantScore {
+		winTeam = "dire"
+	}
+	err = d.CompleteMatch(ctx, matchID, radiantScore, direScore, winTeam, durationSecs)
 	require.NoError(t, err)
 
 	return matchID
@@ -298,7 +302,7 @@ func TestCompleteMatch_AlreadyCompleted(t *testing.T) {
 	matchID := buildCompletedMatch(t, d, "m1", 30, 20, 2000, []int64{pid}, nil, 100)
 
 	// Try to complete again with different scores
-	err := d.CompleteMatch(ctx, matchID, 50, 40, 9999)
+	err := d.CompleteMatch(ctx, matchID, 50, 40, "radiant", 9999)
 	require.NoError(t, err)
 
 	// Scores must not have changed

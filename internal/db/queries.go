@@ -214,14 +214,14 @@ func (db *DB) UpsertMatchPlayerStat(ctx context.Context, matchID, playerID int64
 	return err
 }
 
-// CompleteMatch marks a match as completed and records final scores and duration.
-func (db *DB) CompleteMatch(ctx context.Context, matchID int64, radiantScore, direScore, durationSecs int) error {
+// CompleteMatch marks a match as completed and records final scores, winner, and duration.
+func (db *DB) CompleteMatch(ctx context.Context, matchID int64, radiantScore, direScore int, winTeam string, durationSecs int) error {
 	_, err := db.conn.ExecContext(ctx, `
 		UPDATE matches
 		SET state = 'completed', radiant_score = ?, dire_score = ?,
-		    duration_secs = ?, ended_at = unixepoch()
+		    win_team = ?, duration_secs = ?, ended_at = unixepoch()
 		WHERE id = ? AND state != 'completed'`,
-		radiantScore, direScore, durationSecs, matchID)
+		radiantScore, direScore, winTeam, durationSecs, matchID)
 	return err
 }
 
@@ -229,7 +229,7 @@ func (db *DB) CompleteMatch(ctx context.Context, matchID int64, radiantScore, di
 // comma-separated player name lists per team from match_player_stats.
 func (db *DB) ListMatches(ctx context.Context) ([]MatchSummary, error) {
 	rows, err := db.conn.QueryContext(ctx, `
-		SELECT m.id, m.dota_match_id, m.state, m.radiant_score, m.dire_score, m.duration_secs, m.started_at,
+		SELECT m.id, m.dota_match_id, m.state, m.win_team, m.radiant_score, m.dire_score, m.duration_secs, m.started_at,
 		       GROUP_CONCAT(CASE WHEN mps.team_name = 'radiant' THEN p.display_name END) AS radiant_players,
 		       GROUP_CONCAT(CASE WHEN mps.team_name = 'dire'    THEN p.display_name END) AS dire_players
 		FROM matches m
@@ -247,7 +247,7 @@ func (db *DB) ListMatches(ctx context.Context) ([]MatchSummary, error) {
 		var m MatchSummary
 		var radiant, dire sql.NullString
 		if err := rows.Scan(
-			&m.ID, &m.DotaMatchID, &m.State, &m.RadiantScore, &m.DireScore, &m.DurationSecs, &m.StartedAt,
+			&m.ID, &m.DotaMatchID, &m.State, &m.WinTeam, &m.RadiantScore, &m.DireScore, &m.DurationSecs, &m.StartedAt,
 			&radiant, &dire,
 		); err != nil {
 			return nil, err
@@ -267,9 +267,9 @@ func (db *DB) ListMatches(ctx context.Context) ([]MatchSummary, error) {
 func (db *DB) GetMatchDetail(ctx context.Context, matchID int64) (*MatchDetailView, error) {
 	var m MatchSummary
 	err := db.conn.QueryRowContext(ctx, `
-		SELECT id, dota_match_id, state, radiant_score, dire_score, duration_secs, started_at
+		SELECT id, dota_match_id, state, win_team, radiant_score, dire_score, duration_secs, started_at
 		FROM matches WHERE id = ?`, matchID).
-		Scan(&m.ID, &m.DotaMatchID, &m.State, &m.RadiantScore, &m.DireScore, &m.DurationSecs, &m.StartedAt)
+		Scan(&m.ID, &m.DotaMatchID, &m.State, &m.WinTeam, &m.RadiantScore, &m.DireScore, &m.DurationSecs, &m.StartedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -315,14 +315,12 @@ func (db *DB) ListPlayers(ctx context.Context) ([]LeaderboardEntry, error) {
 	rows, err := db.conn.QueryContext(ctx, `
 		SELECT p.id, p.display_name,
 		       COUNT(DISTINCT mps.match_id)  AS matches_played,
-		       COALESCE(SUM(CASE WHEN m.state = 'completed' AND (
-		           (mps.team_name = 'radiant' AND m.radiant_score > m.dire_score) OR
-		           (mps.team_name = 'dire'    AND m.dire_score   > m.radiant_score)
-		         ) THEN 1 ELSE 0 END), 0)    AS wins,
-		       COALESCE(SUM(CASE WHEN m.state = 'completed' AND (
-		           (mps.team_name = 'radiant' AND m.radiant_score < m.dire_score) OR
-		           (mps.team_name = 'dire'    AND m.dire_score    < m.radiant_score)
-		         ) THEN 1 ELSE 0 END), 0)    AS losses,
+		       COALESCE(SUM(CASE WHEN m.state = 'completed' AND
+		           mps.team_name = m.win_team
+		         THEN 1 ELSE 0 END), 0)      AS wins,
+		       COALESCE(SUM(CASE WHEN m.state = 'completed' AND m.win_team != '' AND
+		           mps.team_name != m.win_team
+		         THEN 1 ELSE 0 END), 0)      AS losses,
 		       COALESCE(SUM(mps.kills), 0)   AS total_kills,
 		       COALESCE(SUM(mps.deaths), 0)  AS total_deaths,
 		       COALESCE(SUM(mps.assists), 0) AS total_assists,
@@ -355,12 +353,10 @@ func (db *DB) ListPlayers(ctx context.Context) ([]LeaderboardEntry, error) {
 func (db *DB) ListPlayerStreaks(ctx context.Context) (map[int64]int, error) {
 	rows, err := db.conn.QueryContext(ctx, `
 		SELECT mps.player_id,
-		       CASE WHEN (mps.team_name = 'radiant' AND m.radiant_score > m.dire_score) OR
-		                 (mps.team_name = 'dire'    AND m.dire_score   > m.radiant_score)
-		            THEN 1 ELSE 0 END AS won
+		       CASE WHEN mps.team_name = m.win_team THEN 1 ELSE 0 END AS won
 		FROM match_player_stats mps
 		JOIN matches m ON m.id = mps.match_id
-		WHERE m.state = 'completed'
+		WHERE m.state = 'completed' AND m.win_team != ''
 		ORDER BY mps.player_id, m.started_at DESC`)
 	if err != nil {
 		return nil, err
@@ -410,9 +406,7 @@ func (db *DB) HeroStats(ctx context.Context) ([]HeroStat, error) {
 	rows, err := db.conn.QueryContext(ctx, `
 		SELECT mps.hero_name,
 		       COUNT(*) AS picks,
-		       SUM(CASE WHEN (mps.team_name = 'radiant' AND m.radiant_score > m.dire_score) OR
-		                     (mps.team_name = 'dire'    AND m.dire_score   > m.radiant_score)
-		                THEN 1 ELSE 0 END) AS wins
+		       SUM(CASE WHEN mps.team_name = m.win_team THEN 1 ELSE 0 END) AS wins
 		FROM match_player_stats mps
 		JOIN matches m ON m.id = mps.match_id
 		WHERE m.state = 'completed'
