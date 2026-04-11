@@ -74,9 +74,10 @@ type Service struct {
 	botAccountID atomic.Uint32
 	onConnected  func() // called once on first ConnectedEvent
 
-	// startMu guards startCh, which is recreated for each lobby.
+	// startMu guards startCh and resetCh.
 	startMu sync.Mutex
 	startCh chan struct{}
+	resetCh chan struct{} // closed to cancel the current waitForStart goroutine
 }
 
 // New reads credentials from the environment and returns a Service ready to
@@ -105,6 +106,7 @@ func New(gate *match.Gate) *Service {
 		client:     client,
 		dota:       d,
 		gcReady:    make(chan struct{}),
+		resetCh:    make(chan struct{}),
 	}
 }
 
@@ -326,21 +328,25 @@ func (s *Service) CreateLobbyAndInvite(players []db.Player) {
 			continue
 		}
 		s.dota.InviteLobbyMember(sid)
+		s.client.Social.SendMessage(sid, steamlang.EChatEntryType_ChatMsg,
+			"Lobby is ready! Password: "+s.lobbyPass)
 		log.Printf("[bot] invited %s (%s) to lobby", p.DisplayName, p.SteamID)
 	}
 
-	// Create a fresh channel for this lobby's !start signal.
+	// Create a fresh channel for this lobby's !start signal. Capture the
+	// current resetCh so this goroutine can be cancelled by Reset().
 	ch := make(chan struct{}, 1)
 	s.startMu.Lock()
 	s.startCh = ch
+	resetCh := s.resetCh
 	s.startMu.Unlock()
 
-	go s.waitForStart(ch)
+	go s.waitForStart(ch, resetCh)
 }
 
 // waitForStart blocks until !start is received in lobby chat, then opens the
-// match gate and launches the lobby. Exits on timeout (4 hours).
-func (s *Service) waitForStart(startCh chan struct{}) {
+// match gate and launches the lobby. Exits on reset or timeout (4 hours).
+func (s *Service) waitForStart(startCh chan struct{}, resetCh chan struct{}) {
 	log.Println("[bot] waiting for !start in lobby chat...")
 	timeout := time.After(4 * time.Hour)
 
@@ -349,6 +355,9 @@ func (s *Service) waitForStart(startCh chan struct{}) {
 		s.gate.Open()
 		s.dota.LaunchLobby()
 		log.Println("[bot] lobby launched — match gate open")
+
+	case <-resetCh:
+		log.Println("[bot] lobby reset — aborting wait")
 
 	case <-timeout:
 		log.Println("[bot] !start not received within 4 hours — giving up")
@@ -359,6 +368,7 @@ func (s *Service) waitForStart(startCh chan struct{}) {
 	s.startCh = nil
 	s.startMu.Unlock()
 }
+
 
 
 func parseSteamID(s string) (steamid.SteamId, error) {

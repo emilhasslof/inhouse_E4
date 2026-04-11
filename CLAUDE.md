@@ -14,7 +14,7 @@ Dota 2 inhouse league stats website for a small group (~10-20 players). Collect 
 
 Two-part system: a Go backend API + a separate React/TypeScript frontend (in `/home/emilh/inhouse-E6/frontend`, built with Lovable/Vite).
 
-The Go backend is a single binary (`cmd/server`) that handles GSI ingest and serves a JSON REST API. SQLite on a Fly.io persistent volume.
+The Go backend is a single binary (`cmd/server`) that handles GSI ingest and serves a JSON REST API. SQLite on a railway persistent volume.
 
 ```
 Player's Dota client → POST /gsi → Go HTTP server → SQLite (data/inhouse.db)
@@ -37,6 +37,9 @@ Player's Dota client → POST /gsi → Go HTTP server → SQLite (data/inhouse.d
 | GET | /api/players | Player leaderboard (wins/losses/streak/GPM) |
 | GET | /api/stats/heroes | Hero pick/win counts |
 | GET | /api/stats/overview | League-wide aggregate stats |
+| GET | /api/registered-players | All registered players (display_name, steam_id) |
+| POST | /api/lobby/create | Create lobby + invite players — takes `{steam_ids: string[]}`. 400 if any ID unregistered. |
+| POST | /api/lobby/reset | Hard-reset the bot (abandon lobby, kill connection, reconnect). 503 if bot not configured. |
 
 CORS is open (`*`) so the frontend can call from any origin.
 
@@ -73,12 +76,12 @@ Post-game detection: when `map.game_state == "DOTA_GAMERULES_STATE_POST_GAME"`, 
 |---|---|
 | `cmd/server/main.go` | Server entry point — opens DB, wires handlers, listens |
 | `cmd/bot/main.go` | Steam bot — creates lobbies, self-kicks, waits for `!start` |
+| `internal/bot/manager.go` | `Manager` wraps `Service` and owns its lifecycle — used by the web handler for lobby create and hard reset |
 | `cmd/datagen/main.go` | **Dev only** — fake GSI generator for 10 simulated players |
 | `internal/db/` | SQLite layer: schema, queries, types (all types have JSON tags) |
 | `internal/gsi/handler.go` | `POST /gsi` — auth, snapshot insert, post-game detection |
 | `internal/web/handlers.go` | JSON API handlers for all `/api/*` endpoints |
 | `internal/web/routes.go` | Chi router — GSI ingest + API routes + CORS middleware |
-| `gsi/main.go` | Original local GSI debug receiver (reference only, not used in prod) |
 | `data/` | SQLite database files — gitignored |
 | `.env` | Steam credentials — gitignored |
 | `Dockerfile` | Builds `cmd/server` only (datagen is never included) |

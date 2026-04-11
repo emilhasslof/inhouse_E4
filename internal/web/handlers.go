@@ -17,6 +17,7 @@ import (
 // keeping go-steam out of test binaries.
 type LobbyCreator interface {
 	CreateLobbyAndInvite(players []db.Player)
+	Reset()
 }
 
 // Handler serves the JSON API backed by the database.
@@ -70,14 +71,34 @@ var specJSON = []byte(`{
       "returns": "{ display_name, steam_id }[]"
     },
     {
+      "method": "GET",
+      "path": "/api/matches/:id/draft",
+      "description": "Captain's Mode draft for a match — picks and bans in slot order per team. 404 if no draft data (All Pick matches have none).",
+      "returns": "{ radiant: { picks: { slot, hero_id, hero_name }[], bans: { slot, hero_id, hero_name }[] }, dire: { ... } }"
+    },
+    {
+      "method": "POST",
+      "path": "/api/register",
+      "description": "Register a new player. Returns a GSI auth token. 409 if the Steam ID is already registered.",
+      "body": "{ steam_id: string, display_name: string }",
+      "returns": "{ token: string }"
+    },
+    {
       "method": "POST",
       "path": "/api/lobby/create",
-      "description": "Create a Dota 2 lobby and invite the given players. Returns immediately.",
-      "body": "{ players: string[] }",
+      "description": "Create a Dota 2 lobby and invite the given players. Returns immediately. 400 if any Steam ID is not registered.",
+      "body": "{ steam_ids: string[] }",
+      "returns": "{ ok: true }"
+    },
+    {
+      "method": "POST",
+      "path": "/api/lobby/reset",
+      "description": "Abandon the current lobby and cancel any pending !start waiter. No-op if no lobby is active. 503 if the bot is not configured.",
       "returns": "{ ok: true }"
     }
   ]
 }`)
+
 
 // Spec handles GET /api — returns a JSON listing of all available endpoints.
 func (h *Handler) Spec(w http.ResponseWriter, r *http.Request) {
@@ -232,21 +253,39 @@ func (h *Handler) LeagueOverview(w http.ResponseWriter, r *http.Request) {
 }
 
 // CreateLobby handles POST /api/lobby/create
-// Resolves player display names to DB records, then triggers the bot to create
-// a Dota 2 lobby and invite each player. Returns immediately.
+// Resolves Steam IDs to DB records, then triggers the bot to create a Dota 2
+// lobby and invite each player. Returns 400 if any Steam ID is not registered.
 func (h *Handler) CreateLobby(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Players []string `json:"players"`
+		SteamIDs []string `json:"steam_ids"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.Players) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "players list required"})
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.SteamIDs) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "steam_ids list required"})
 		return
 	}
 
-	players, err := h.db.PlayersByDisplayNames(r.Context(), body.Players)
+	players, err := h.db.PlayersBySteamIDs(r.Context(), body.SteamIDs)
 	if err != nil {
 		log.Printf("[api] lobby create — player lookup: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+
+	if len(players) != len(body.SteamIDs) {
+		found := make(map[string]bool, len(players))
+		for _, p := range players {
+			found[p.SteamID] = true
+		}
+		var unmatched []string
+		for _, id := range body.SteamIDs {
+			if !found[id] {
+				unmatched = append(unmatched, id)
+			}
+		}
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error":     "unrecognised steam IDs",
+			"unmatched": unmatched,
+		})
 		return
 	}
 
@@ -256,5 +295,38 @@ func (h *Handler) CreateLobby(w http.ResponseWriter, r *http.Request) {
 		log.Println("[api] lobby create — bot not configured, skipping")
 	}
 
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// MatchDraft handles GET /api/matches/{id}/draft
+func (h *Handler) MatchDraft(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+
+	draft, err := h.db.GetMatchDraft(r.Context(), id)
+	if err != nil {
+		log.Printf("[api] get match draft %d: %v", id, err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	if draft == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no draft data for this match"})
+		return
+	}
+	writeJSON(w, http.StatusOK, draft)
+}
+
+// ResetLobby handles POST /api/lobby/reset — abandons the current lobby and
+// cancels any pending !start waiter.
+func (h *Handler) ResetLobby(w http.ResponseWriter, r *http.Request) {
+	if h.bot == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "bot not configured"})
+		return
+	}
+	h.bot.Reset()
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
