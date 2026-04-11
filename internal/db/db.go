@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -72,6 +73,26 @@ func (db *DB) Close() error {
 }
 
 func (db *DB) migrate() error {
-	_, err := db.conn.Exec(schemaSQL)
-	return err
+	if _, err := db.conn.Exec(schemaSQL); err != nil {
+		return err
+	}
+	// Additive column migrations — safe to re-run (ignored if column already exists).
+	additiveMigrations := []string{
+		`ALTER TABLE matches ADD COLUMN win_team TEXT NOT NULL DEFAULT ''`,
+	}
+	for _, stmt := range additiveMigrations {
+		if _, err := db.conn.Exec(stmt); err != nil {
+			// SQLite returns an error when the column already exists; ignore it.
+			if !isDuplicateColumnError(err) {
+				return fmt.Errorf("migration %q: %w", stmt, err)
+			}
+		}
+	}
+	return nil
+}
+
+// isDuplicateColumnError reports whether err is SQLite's "duplicate column name" error,
+// which is the expected result when an ALTER TABLE ADD COLUMN migration has already run.
+func isDuplicateColumnError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "duplicate column name")
 }
