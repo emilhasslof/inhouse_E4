@@ -42,6 +42,7 @@ type MatchSummary struct {
 	ID             int64    `json:"id"`
 	DotaMatchID    string   `json:"dota_match_id"`
 	State          string   `json:"state"`
+	WinTeam        string   `json:"win_team"`
 	RadiantScore   int      `json:"radiant_score"`
 	DireScore      int      `json:"dire_score"`
 	DurationSecs   int      `json:"duration_secs"`

@@ -81,11 +81,11 @@ func (m *Manager) Reset() {
 
 // CreateLobbyAndInvite forwards to the current Service.
 // No-ops if the bot is offline (e.g. mid-restart).
-func (m *Manager) CreateLobbyAndInvite(players []db.Player) {
+func (m *Manager) CreateLobbyAndInvite(players []db.Player, gameMode string) {
 	m.mu.Lock()
 	svc := m.svc
 	m.mu.Unlock()
 	if svc != nil {
-		svc.CreateLobbyAndInvite(players)
+		svc.CreateLobbyAndInvite(players, gameMode)
 	}
 }

@@ -33,6 +33,7 @@ type MapBlock struct {
 	GameState    string `json:"game_state"`
 	RadiantScore int    `json:"radiant_score"`
 	DireScore    int    `json:"dire_score"`
+	WinTeam      string `json:"win_team"`
 }
 
 // PlayerBlock carries per-player stats (from the reporting player's own perspective).
@@ -233,7 +234,7 @@ func (h *Handler) Receive(w http.ResponseWriter, r *http.Request) {
 			log.Printf("[gsi] upsert match_player_stat: %v", err)
 		}
 		if err := h.db.CompleteMatch(r.Context(), matchID,
-			p.Map.RadiantScore, p.Map.DireScore, p.Map.GameTime); err != nil {
+			p.Map.RadiantScore, p.Map.DireScore, p.Map.WinTeam, p.Map.GameTime); err != nil {
 			log.Printf("[gsi] complete match %d: %v", matchID, err)
 		}
 		// Match is over — close the gate so future packets (from e.g. datagen

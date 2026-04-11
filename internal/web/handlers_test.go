@@ -114,7 +114,7 @@ func TestPlayersHandler_StreakPopulated(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, d.UpsertMatchPlayerStat(ctx, matchID, p.ID,
 			"npc_dota_hero_axe", "radiant", 5, 2, 3, 450, 400, 100, 5, 20))
-		require.NoError(t, d.CompleteMatch(ctx, matchID, 30, 10, 2000))
+		require.NoError(t, d.CompleteMatch(ctx, matchID, 30, 10, "radiant", 2000))
 	}
 
 	srv := newTestServer(t, d)
