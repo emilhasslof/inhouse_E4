@@ -8,8 +8,6 @@ $ErrorActionPreference = 'Stop'
 Write-Host ""
 Write-Host "=== Inhouse League Registration ===" -ForegroundColor Cyan
 Write-Host ""
-Read-Host "Press Enter to start"
-Write-Host ""
 
 # Find Steam path from registry
 try {
@@ -65,13 +63,8 @@ if ($accounts.Count -eq 1) {
     $chosen = $accounts[$idx]
 }
 
-Write-Host ""
-$displayName = Read-Host "Enter your display name (shown on the leaderboard)"
-if (-not $displayName) {
-    Write-Host "Display name cannot be empty." -ForegroundColor Red
-    Read-Host "Press Enter to exit"
-    exit 1
-}
+$displayName = $chosen.Name
+Write-Host "Using Steam name: $displayName"
 
 # Register with backend
 $apiBase = "https://inhousee4-production.up.railway.app"
@@ -85,20 +78,22 @@ try {
     $status = $_.Exception.Response.StatusCode.value__
     if ($status -eq 409) {
         Write-Host "You are already registered! No need to run this again." -ForegroundColor Yellow
+        $alreadyRegistered = $true
     } else {
         Write-Host "ERROR: Registration failed ($($_.Exception.Message))" -ForegroundColor Red
+        Read-Host "Press Enter to exit"
+        exit 1
     }
-    Read-Host "Press Enter to exit"
-    exit 1
 }
 
-# Write GSI config
-$dotaGsiDir = Join-Path $steamPath "steamapps\common\dota 2 beta\game\dota\cfg\gamestate_integration"
-if (-not (Test-Path $dotaGsiDir)) {
-    New-Item -ItemType Directory -Path $dotaGsiDir | Out-Null
-}
+if (-not $alreadyRegistered) {
+    # Write GSI config
+    $dotaGsiDir = Join-Path $steamPath "steamapps\common\dota 2 beta\game\dota\cfg\gamestate_integration"
+    if (-not (Test-Path $dotaGsiDir)) {
+        New-Item -ItemType Directory -Path $dotaGsiDir | Out-Null
+    }
 
-$gsiConfig = @"
+    $gsiConfig = @"
 "inhouse"
 {
     "uri"        "https://inhousee4-production.up.railway.app/gsi"
@@ -119,24 +114,25 @@ $gsiConfig = @"
 }
 "@
 
-$gsiPath = Join-Path $dotaGsiDir "gamestate_integration_inhouse.cfg"
-Set-Content -Path $gsiPath -Value $gsiConfig -Encoding UTF8
+    $gsiPath = Join-Path $dotaGsiDir "gamestate_integration_inhouse.cfg"
+    Set-Content -Path $gsiPath -Value $gsiConfig -Encoding UTF8
+
+    Write-Host ""
+    Write-Host "All done! You are registered." -ForegroundColor Green
+    Write-Host "GSI config written to: $gsiPath"
+    Write-Host "Launch Dota 2 and your stats will be tracked automatically."
+}
 
 Write-Host ""
-Write-Host "All done! You are registered." -ForegroundColor Green
-Write-Host "GSI config written to: $gsiPath"
-Write-Host "Launch Dota 2 and your stats will be tracked automatically."
-Write-Host ""
 Write-Host "--------------------------------------------------------------" -ForegroundColor DarkGray
-Write-Host "One last step: add the league bot as a Steam friend." -ForegroundColor Cyan
-Write-Host "This lets the bot send you lobby invites when a match is ready." -ForegroundColor Cyan
-Write-Host ""
-Write-Host "Your browser will open the bot's Steam profile." -ForegroundColor Cyan
+Write-Host "Add the league bot as a Steam friend so it can send you lobby invites." -ForegroundColor Cyan
 Write-Host "Click 'Add as Friend' and the bot will accept automatically." -ForegroundColor Cyan
 Write-Host "--------------------------------------------------------------" -ForegroundColor DarkGray
 Write-Host ""
-Read-Host "Press Enter to open the Steam profile in your browser"
-Start-Process "https://steamcommunity.com/profiles/76561198719296562"
+$open = Read-Host "Open bot Steam profile in browser? (y/n)"
+if ($open -eq 'y' -or $open -eq 'Y') {
+    Start-Process "https://steamcommunity.com/profiles/76561198719296562"
+}
 Write-Host ""
 Write-Host "Done! You're all set." -ForegroundColor Green
 Write-Host ""

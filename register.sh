@@ -91,30 +91,32 @@ HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" \
 HTTP_BODY=$(echo "$HTTP_RESPONSE" | head -n -1)
 HTTP_STATUS=$(echo "$HTTP_RESPONSE" | tail -n 1)
 
+ALREADY_REGISTERED=false
 if [ "$HTTP_STATUS" -eq 409 ]; then
     echo -e "${YELLOW}You are already registered! No need to run this again.${NC}"
-    exit 1
+    ALREADY_REGISTERED=true
 elif [ "$HTTP_STATUS" -ne 201 ]; then
     echo -e "${RED}ERROR: Registration failed (HTTP $HTTP_STATUS)${NC}"
     echo "$HTTP_BODY"
     exit 1
 fi
 
-TOKEN=$(echo "$HTTP_BODY" | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+if [ "$ALREADY_REGISTERED" = false ]; then
+    TOKEN=$(echo "$HTTP_BODY" | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
 
-if [ -z "$TOKEN" ]; then
-    echo -e "${RED}ERROR: Could not read token from response.${NC}"
-    exit 1
-fi
+    if [ -z "$TOKEN" ]; then
+        echo -e "${RED}ERROR: Could not read token from response.${NC}"
+        exit 1
+    fi
 
-# --- Write GSI config -------------------------------------------------------
+    # --- Write GSI config -------------------------------------------------------
 
-GSI_DIR="$STEAM_PATH/steamapps/common/dota 2 beta/game/dota/cfg/gamestate_integration"
-mkdir -p "$GSI_DIR"
+    GSI_DIR="$STEAM_PATH/steamapps/common/dota 2 beta/game/dota/cfg/gamestate_integration"
+    mkdir -p "$GSI_DIR"
 
-GSI_PATH="$GSI_DIR/gamestate_integration_inhouse.cfg"
+    GSI_PATH="$GSI_DIR/gamestate_integration_inhouse.cfg"
 
-cat > "$GSI_PATH" <<EOF
+    cat > "$GSI_PATH" <<EOF
 "inhouse"
 {
     "uri"        "$API_BASE/gsi"
@@ -135,21 +137,25 @@ cat > "$GSI_PATH" <<EOF
 }
 EOF
 
-echo ""
-echo -e "${GREEN}All done! You are registered.${NC}"
-echo "GSI config written to: $GSI_PATH"
-echo "Launch Dota 2 and your stats will be tracked automatically."
+    echo ""
+    echo -e "${GREEN}All done! You are registered.${NC}"
+    echo "GSI config written to: $GSI_PATH"
+    echo "Launch Dota 2 and your stats will be tracked automatically."
+fi
+
 echo ""
 echo -e "${GRAY}--------------------------------------------------------------${NC}"
-echo -e "${CYAN}One last step: add the league bot as a Steam friend.${NC}"
-echo -e "${CYAN}This lets the bot send you lobby invites when a match is ready.${NC}"
+echo -e "${CYAN}Add the league bot as a Steam friend so it can send you lobby invites.${NC}"
 echo ""
 echo -e "${CYAN}Bot Steam profile:${NC}"
 echo "  $BOT_PROFILE"
 echo -e "${CYAN}Click 'Add as Friend' and the bot will accept automatically.${NC}"
 echo -e "${GRAY}--------------------------------------------------------------${NC}"
 echo ""
-xdg-open "$BOT_PROFILE" 2>/dev/null || true
+read -rp "Open bot Steam profile in browser? (y/n) " OPEN_BROWSER
+if [[ "$OPEN_BROWSER" == "y" || "$OPEN_BROWSER" == "Y" ]]; then
+    xdg-open "$BOT_PROFILE" 2>/dev/null || true
+fi
 echo ""
 echo -e "${GREEN}Done! You're all set.${NC}"
 echo ""
