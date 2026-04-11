@@ -9,6 +9,8 @@ Mark items done with `[x]` when complete, or remove them.
 
 ## Backlog
 
+- [ ] **Raise match confirmation threshold back to 2 (or more) before going live** — currently set to 1 for solo testing. See `internal/match/gate.go:confirmThreshold`.
+
 - [ ] **Live match view** — add a polling endpoint (e.g. `GET /api/match/live`) returning current state for an in-progress match: scoreline, player K/D/A/gold, hero names, and building status per team. Building visibility is limited to own-team buildings in GSI, so enemy tower/barracks state would need to be inferred by combining feeds from both teams. This is a different UX from finished match pages — needs a polling interval, live scoreboard, and no final duration yet. Design the minimum viable payload before touching the DB.
 - [ ] **Add a persistent Railway volume** before real matches begin — the database currently lives in ephemeral container storage and resets on every redeploy.
 - [ ] **Gold-over-time graph** on the match detail page — the data is already in `gsi_snapshots`, just needs a query and a frontend chart.

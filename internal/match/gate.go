@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	ttl              = 4 * time.Hour
-	confirmThreshold = 2
+	ttl              = 30 * time.Second
+	confirmThreshold = 1
 )
 
 // Gate controls GSI ingest through three states:
@@ -39,7 +39,7 @@ func (g *Gate) Open() {
 	g.expiresAt = time.Now().Add(ttl)
 	g.lockedMatchID = ""
 	g.candidates = make(map[string]map[string]struct{})
-	log.Println("[gate] open — waiting for match confirmation from 2 players")
+	log.Println("[gate] open — waiting for match confirmation from 1 players")
 }
 
 // Close marks the gate as closed. Called by the GSI handler on POST_GAME.
