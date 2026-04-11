@@ -9,7 +9,6 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -51,19 +50,14 @@ func main() {
 		log.Println("[server] dev mode — match gate pre-opened")
 	}
 
-	ctx := context.Background()
-	botSvc := bot.New(gate)
-	if botSvc != nil {
-		go botSvc.Start(ctx)
-	}
+	manager := bot.NewManager(gate)
 
 	gsiHandler := gsi.New(database, gate)
-	// Pass bot as a web.LobbyCreator interface. When botSvc is nil we pass a
-	// typed nil interface value, not a (*bot.Service)(nil) wrapped in an
-	// interface, so the h.bot != nil check in the handler works correctly.
+	// Pass manager as a web.LobbyCreator interface. When manager is nil (bot not
+	// configured) we pass a nil interface, so h.bot != nil checks work correctly.
 	var lobbyBot web.LobbyCreator
-	if botSvc != nil {
-		lobbyBot = botSvc
+	if manager != nil {
+		lobbyBot = manager
 	}
 	webHandler := web.New(database, lobbyBot)
 	router := web.NewRouter(gsiHandler, webHandler)

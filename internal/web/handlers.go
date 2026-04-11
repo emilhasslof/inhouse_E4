@@ -17,6 +17,7 @@ import (
 // keeping go-steam out of test binaries.
 type LobbyCreator interface {
 	CreateLobbyAndInvite(players []db.Player)
+	Reset()
 }
 
 // Handler serves the JSON API backed by the database.
@@ -81,6 +82,12 @@ var specJSON = []byte(`{
       "path": "/api/lobby/create",
       "description": "Create a Dota 2 lobby and invite the given players. Returns immediately. 400 if any Steam ID is not registered.",
       "body": "{ steam_ids: string[] }",
+      "returns": "{ ok: true }"
+    },
+    {
+      "method": "POST",
+      "path": "/api/lobby/reset",
+      "description": "Abandon the current lobby and cancel any pending !start waiter. No-op if no lobby is active. 503 if the bot is not configured.",
       "returns": "{ ok: true }"
     }
   ]
@@ -282,5 +289,16 @@ func (h *Handler) CreateLobby(w http.ResponseWriter, r *http.Request) {
 		log.Println("[api] lobby create — bot not configured, skipping")
 	}
 
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// ResetLobby handles POST /api/lobby/reset — abandons the current lobby and
+// cancels any pending !start waiter.
+func (h *Handler) ResetLobby(w http.ResponseWriter, r *http.Request) {
+	if h.bot == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "bot not configured"})
+		return
+	}
+	h.bot.Reset()
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

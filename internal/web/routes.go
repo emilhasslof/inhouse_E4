@@ -37,6 +37,7 @@ func NewRouter(gsiH *gsi.Handler, webH *Handler) http.Handler {
 	r.Get("/api/stats/heroes", webH.HeroStats)
 	r.Get("/api/stats/overview", webH.LeagueOverview)
 	r.Post("/api/lobby/create", webH.CreateLobby)
+	r.Post("/api/lobby/reset", webH.ResetLobby)
 
 	return r
 }

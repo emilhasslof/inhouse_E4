@@ -7,7 +7,6 @@ Mark items done with `[x]` when complete, or remove them.
 
 ## Up next
 
-- [ ] Add `POST /api/bot/reset` endpoint to hard-reset the bot (disconnect + reconnect + re-establish GC) — for a frontend admin button
 
 ## Backlog
 
@@ -19,6 +18,8 @@ Mark items done with `[x]` when complete, or remove them.
 - [ ] **Nemesis streaks** — track, for every ordered player pair (A, B), how many consecutive times A has killed B without B ever killing A back. Streaks accumulate across matches. When B kills A, A's streak on B resets to 0 and B's streak on A starts. Expose the current top streaks via `GET /api/stats/nemesis`. Requires: (1) kill event detection from `gsi_snapshot` deltas (`kill_list` changes between ticks), (2) new `player_pair_killstreak` table storing current streak count + all-time peak per pair, updated at match end (or live during ingest).
 
 ## Done
+
+- [x] `POST /api/lobby/reset` — hard-resets the bot (abandon lobby, cancel waiters, kill Steam connection, reconnect fresh). Implemented via `bot.Manager` which owns the `Service` lifecycle.
 
 - [x] Match gating — GSI ingest only accepts packets when a bot lobby is active. Bot kicks itself from its team slot after lobby creation (retaining host status in unassigned pool), then listens for `!start` in lobby chat. On `!start`, gate opens and bot calls `LaunchLobby()`. Gate closes automatically on POST_GAME. Dev mode pre-opens the gate so datagen works without a bot.
 - [x] `allplayers` investigation — confirmed **never present** for regular players, only for observers. Valve intentionally gates it. All 10 GSI clients are required for complete stats unless we add an observer bot.
