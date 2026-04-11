@@ -78,6 +78,10 @@ type Service struct {
 	startMu sync.Mutex
 	startCh chan struct{}
 	resetCh chan struct{} // closed to cancel the current waitForStart goroutine
+
+	// lobbyMu ensures only one CreateLobbyAndInvite runs at a time.
+	// A second call while one is in flight is dropped and logged.
+	lobbyMu sync.Mutex
 }
 
 // New reads credentials from the environment and returns a Service ready to
@@ -277,6 +281,12 @@ func (s *Service) Start(ctx context.Context) {
 // !start is received the gate opens and the lobby launches. Designed to run in
 // a goroutine — errors are logged, not returned.
 func (s *Service) CreateLobbyAndInvite(players []db.Player) {
+	if !s.lobbyMu.TryLock() {
+		log.Println("[bot] lobby creation already in progress — ignoring duplicate request")
+		return
+	}
+	defer s.lobbyMu.Unlock()
+
 	select {
 	case <-s.gcReady:
 	case <-time.After(60 * time.Second):
