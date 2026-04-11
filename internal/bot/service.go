@@ -84,9 +84,11 @@ type Service struct {
 	startCh chan struct{}
 	resetCh chan struct{} // closed to cancel the current waitForStart goroutine
 
-	// lobbyMu ensures only one CreateLobbyAndInvite runs at a time.
-	// A second call while one is in flight is dropped and logged.
+	// lobbyMu serialises the LeaveCreateLobby call only (not waitForStart).
 	lobbyMu sync.Mutex
+	// lastLobbyNanos is the unix-nano timestamp of the last successful lobby
+	// creation, used to deduplicate rapid repeat requests (e.g. double-click).
+	lastLobbyNanos atomic.Int64
 }
 
 // New reads credentials from the environment and returns a Service ready to
@@ -314,12 +316,27 @@ func (s *Service) Start(ctx context.Context) {
 // !start is received the gate opens and the lobby launches. Designed to run in
 // a goroutine — errors are logged, not returned.
 // gameMode must be "captains_mode" or "all_pick" (default: "captains_mode").
+const lobbyDedupWindow = 3 * time.Second
+
 func (s *Service) CreateLobbyAndInvite(players []db.Player, gameMode string) {
+	// Ignore rapid repeat calls (e.g. double-click) within the dedup window.
+	last := time.Unix(0, s.lastLobbyNanos.Load())
+	if time.Since(last) < lobbyDedupWindow {
+		log.Println("[bot] duplicate lobby request within dedup window — ignoring")
+		return
+	}
+
+	// Cancel any pending waitForStart from a previous lobby so it doesn't
+	// interfere with the new one.
+	s.startMu.Lock()
+	close(s.resetCh)
+	s.resetCh = make(chan struct{})
+	s.startMu.Unlock()
+
 	if !s.lobbyMu.TryLock() {
 		log.Println("[bot] lobby creation already in progress — ignoring duplicate request")
 		return
 	}
-	defer s.lobbyMu.Unlock()
 
 	s.gcMu.Lock()
 	ready := s.gcReady
@@ -327,6 +344,7 @@ func (s *Service) CreateLobbyAndInvite(players []db.Player, gameMode string) {
 	select {
 	case <-ready:
 	case <-time.After(60 * time.Second):
+		s.lobbyMu.Unlock()
 		log.Println("[bot] timed out waiting for GC — cannot create lobby")
 		return
 	}
@@ -360,6 +378,7 @@ func (s *Service) CreateLobbyAndInvite(players []db.Player, gameMode string) {
 		}
 	}
 	if lobbyErr != nil {
+		s.lobbyMu.Unlock()
 		log.Printf("[bot] create lobby failed after 3 attempts: %v", lobbyErr)
 		return
 	}
@@ -403,18 +422,20 @@ func (s *Service) CreateLobbyAndInvite(players []db.Player, gameMode string) {
 		log.Printf("[bot] invited %s (%s) to lobby", p.DisplayName, p.SteamID)
 	}
 
+	// Record creation time and release the mutex before waiting for !start,
+	// so new requests can come in after the dedup window expires.
+	s.lastLobbyNanos.Store(time.Now().UnixNano())
+	s.lobbyMu.Unlock()
+
 	// Create a fresh channel for this lobby's !start signal. Capture the
-	// current resetCh so this goroutine can be cancelled by Reset().
+	// current resetCh so this goroutine can be cancelled by Reset() or by a
+	// subsequent CreateLobbyAndInvite call.
 	ch := make(chan struct{}, 1)
 	s.startMu.Lock()
 	s.startCh = ch
 	resetCh := s.resetCh
 	s.startMu.Unlock()
 
-	// Call inline (not goroutine) so lobbyMu stays held until the lobby is
-	// fully done. CreateLobbyAndInvite is already running in its own goroutine
-	// (see web/handlers.go), so blocking here is safe and prevents a second
-	// POST from starting a new LeaveCreateLobby while one is active.
 	s.waitForStart(ch, resetCh)
 }
 
