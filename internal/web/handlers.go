@@ -71,6 +71,12 @@ var specJSON = []byte(`{
       "returns": "{ display_name, steam_id }[]"
     },
     {
+      "method": "GET",
+      "path": "/api/matches/:id/draft",
+      "description": "Captain's Mode draft for a match — picks and bans in slot order per team. 404 if no draft data (All Pick matches have none).",
+      "returns": "{ radiant: { picks: { slot, hero_id, hero_name }[], bans: { slot, hero_id, hero_name }[] }, dire: { ... } }"
+    },
+    {
       "method": "POST",
       "path": "/api/register",
       "description": "Register a new player. Returns a GSI auth token. 409 if the Steam ID is already registered.",
@@ -290,6 +296,28 @@ func (h *Handler) CreateLobby(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// MatchDraft handles GET /api/matches/{id}/draft
+func (h *Handler) MatchDraft(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+
+	draft, err := h.db.GetMatchDraft(r.Context(), id)
+	if err != nil {
+		log.Printf("[api] get match draft %d: %v", id, err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	if draft == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no draft data for this match"})
+		return
+	}
+	writeJSON(w, http.StatusOK, draft)
 }
 
 // ResetLobby handles POST /api/lobby/reset — abandons the current lobby and

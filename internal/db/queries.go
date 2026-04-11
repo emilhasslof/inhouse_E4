@@ -59,6 +59,72 @@ func (db *DB) PlayersBySteamIDs(ctx context.Context, steamIDs []string) ([]Playe
 	return players, rows.Err()
 }
 
+// UpsertMatchDraft writes picks and bans for one team. Uses INSERT OR IGNORE so
+// it is safe to call from every POST_GAME packet — only the first call per
+// (match, team, slot) is stored, which is fine because the draft never changes.
+func (db *DB) UpsertMatchDraft(ctx context.Context, matchID int64, teamName string, isPick bool, entries []DraftEntry) error {
+	isPickInt := 0
+	if isPick {
+		isPickInt = 1
+	}
+	for _, e := range entries {
+		_, err := db.conn.ExecContext(ctx,
+			`INSERT OR IGNORE INTO match_draft (match_id, team_name, is_pick, slot, hero_id, hero_name)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
+			matchID, teamName, isPickInt, e.Slot, e.HeroID, e.HeroName)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// GetMatchDraft returns all picks and bans for a match, grouped by team.
+// Returns nil if no draft data exists for the match.
+func (db *DB) GetMatchDraft(ctx context.Context, matchID int64) (*MatchDraftView, error) {
+	rows, err := db.conn.QueryContext(ctx,
+		`SELECT team_name, is_pick, slot, hero_id, hero_name
+		 FROM match_draft WHERE match_id = ?
+		 ORDER BY team_name, is_pick DESC, slot`,
+		matchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	view := &MatchDraftView{
+		Radiant: DraftTeamView{Picks: []DraftEntry{}, Bans: []DraftEntry{}},
+		Dire:    DraftTeamView{Picks: []DraftEntry{}, Bans: []DraftEntry{}},
+	}
+	found := false
+	for rows.Next() {
+		found = true
+		var teamName string
+		var isPick, slot, heroID int
+		var heroName string
+		if err := rows.Scan(&teamName, &isPick, &slot, &heroID, &heroName); err != nil {
+			return nil, err
+		}
+		entry := DraftEntry{Slot: slot, HeroID: heroID, HeroName: heroName}
+		team := &view.Radiant
+		if teamName == "dire" {
+			team = &view.Dire
+		}
+		if isPick == 1 {
+			team.Picks = append(team.Picks, entry)
+		} else {
+			team.Bans = append(team.Bans, entry)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, nil
+	}
+	return view, nil
+}
+
 // ListRegisteredPlayers returns all players with their steam IDs and display names.
 func (db *DB) ListRegisteredPlayers(ctx context.Context) ([]Player, error) {
 	rows, err := db.conn.QueryContext(ctx,

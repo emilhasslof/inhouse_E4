@@ -10,15 +10,16 @@ Mark items done with `[x]` when complete, or remove them.
 
 ## Backlog
 
+- [ ] **Live match view** — frontend needs to be able to poll an in-progress match. Likely a dedicated endpoint (e.g. `GET /api/match/live`) that returns current state: scoreline, player K/D/A/gold, hero names, and building state (towers/barracks standing per team — data comes from own-team building visibility in GSI, noting enemy buildings are not visible so we'd need to infer from both teams' feeds combined). Different UX from finished match pages — polling interval, live scoreboard, no duration yet. Consider what the minimum viable payload looks like before designing the DB query.
 - [ ] Add persistent Railway volume before real matches start (DB currently resets on redeploy)
 - [ ] Remove `APP_ENV=development` from Railway once real players are registered
 - [ ] Gold-over-time graph on the match detail page (data is already in `gsi_snapshots`)
-- [ ] Draft tracking for Captain's Mode — `draft` block is fully populated in CM from first packet, includes all picks and bans. Could store in a `match_draft` table and surface on the match detail page.
 - [ ] Kill timeline — `player.kill_list` maps victim slot → kill count per streak. Could reconstruct a kill event log from `gsi_snapshots`.
 - [ ] **Nemesis streaks** — track, for every ordered player pair (A, B), how many consecutive times A has killed B without B ever killing A back. Streaks accumulate across matches. When B kills A, A's streak on B resets to 0 and B's streak on A starts. Expose the current top streaks via `GET /api/stats/nemesis`. Requires: (1) kill event detection from `gsi_snapshot` deltas (`kill_list` changes between ticks), (2) new `player_pair_killstreak` table storing current streak count + all-time peak per pair, updated at match end (or live during ingest).
 
 ## Done
 
+- [x] Draft tracking — `match_draft` table + `GET /api/matches/{id}/draft`. Populated from POST_GAME GSI packets (Captain's Mode only — All Pick has no draft block). team3=radiant, team2=dire per Dota 2 internal numbering.
 - [x] `POST /api/lobby/reset` — hard-resets the bot (abandon lobby, cancel waiters, kill Steam connection, reconnect fresh). Implemented via `bot.Manager` which owns the `Service` lifecycle.
 
 - [x] Match gating — GSI ingest only accepts packets when a bot lobby is active. Bot kicks itself from its team slot after lobby creation (retaining host status in unassigned pool), then listens for `!start` in lobby chat. On `!start`, gate opens and bot calls `LaunchLobby()`. Gate closes automatically on POST_GAME. Dev mode pre-opens the gate so datagen works without a bot.

@@ -58,9 +58,21 @@ CREATE TABLE IF NOT EXISTS match_player_stats (
   UNIQUE(match_id, player_id)
 );
 
+CREATE TABLE IF NOT EXISTS match_draft (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  match_id  INTEGER NOT NULL REFERENCES matches(id),
+  team_name TEXT    NOT NULL,   -- 'radiant' or 'dire'
+  is_pick   INTEGER NOT NULL,   -- 1 = pick, 0 = ban
+  slot      INTEGER NOT NULL,   -- 0-based within (team, is_pick); preserves pick/ban order
+  hero_id   INTEGER NOT NULL,
+  hero_name TEXT    NOT NULL,
+  UNIQUE(match_id, team_name, is_pick, slot)
+);
+
 CREATE INDEX IF NOT EXISTS idx_snapshots_match_player ON gsi_snapshots(match_id, player_id);
 CREATE INDEX IF NOT EXISTS idx_stats_match ON match_player_stats(match_id);
 CREATE INDEX IF NOT EXISTS idx_stats_player ON match_player_stats(player_id);
+CREATE INDEX IF NOT EXISTS idx_draft_match ON match_draft(match_id);
 `
 
 // seedSQL inserts dev-only fake players used by the datagen tool.

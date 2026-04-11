@@ -107,6 +107,25 @@ type KDARef struct {
 	KDA  float64 `json:"kda"`
 }
 
+// DraftEntry is one pick or ban slot in a draft.
+type DraftEntry struct {
+	Slot     int    `json:"slot"`
+	HeroID   int    `json:"hero_id"`
+	HeroName string `json:"hero_name"`
+}
+
+// DraftTeamView holds the ordered picks and bans for one team.
+type DraftTeamView struct {
+	Picks []DraftEntry `json:"picks"`
+	Bans  []DraftEntry `json:"bans"`
+}
+
+// MatchDraftView is the full draft for a match.
+type MatchDraftView struct {
+	Radiant DraftTeamView `json:"radiant"`
+	Dire    DraftTeamView `json:"dire"`
+}
+
 // LeagueOverview contains aggregate stats across all completed matches.
 type LeagueOverview struct {
 	TotalMatches         int     `json:"total_matches"`
