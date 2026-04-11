@@ -11,14 +11,18 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"reflect"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	dota2 "github.com/paralin/go-dota2"
+	"github.com/paralin/go-dota2/cso"
 	"github.com/paralin/go-dota2/events"
 	"github.com/paralin/go-dota2/protocol"
+	"github.com/paralin/go-dota2/socache"
 	steam "github.com/paralin/go-steam"
 	"github.com/paralin/go-steam/protocol/steamlang"
 	"github.com/paralin/go-steam/steamid"
@@ -230,25 +234,6 @@ func (s *Service) Start(ctx context.Context) {
 					}
 				}()
 
-			case events.ClientStateChanged:
-				// When a lobby first appears in state, join its chat channel so the
-				// bot receives lobby chat messages (GC doesn't route them automatically).
-				if e.OldState.Lobby == nil && e.NewState.Lobby != nil {
-					lobbyID := e.NewState.Lobby.GetLobbyId()
-					channelName := fmt.Sprintf("Lobby_%d", lobbyID)
-					log.Printf("[bot] lobby appeared (id=%d), joining chat channel", lobbyID)
-					go func() {
-						ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-						defer cancel()
-						resp, err := s.dota.JoinChatChannel(ctx, channelName, protocol.DOTAChatChannelTypeT_DOTAChannelType_Lobby, false)
-						if err != nil {
-							log.Printf("[bot] failed to join lobby chat channel: %v", err)
-							return
-						}
-						log.Printf("[bot] joined lobby chat channel (channelID=%d)", resp.GetChannelId())
-					}()
-				}
-
 			case *events.GCConnectionStatusChanged:
 				log.Printf("[bot] GC status: %v", e.NewState)
 				if e.NewState == protocol.GCConnectionStatus_GCConnectionStatus_HAVE_SESSION {
@@ -376,6 +361,26 @@ func (s *Service) CreateLobbyAndInvite(players []db.Player) {
 	}
 	log.Printf("[bot] lobby created: %q (pass: %q)", s.lobbyName, s.lobbyPass)
 
+	// Join the lobby chat channel so the bot receives lobby chat messages.
+	// The GC doesn't route them automatically — we must explicitly subscribe.
+	// go-dota2 stores the lobby in an unexported cache field; we read it via unsafe.
+	if lobbyID, ok := currentLobbyID(s.dota); ok {
+		channelName := fmt.Sprintf("Lobby_%d", lobbyID)
+		log.Printf("[bot] joining lobby chat channel (lobbyID=%d)", lobbyID)
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			resp, err := s.dota.JoinChatChannel(ctx, channelName, protocol.DOTAChatChannelTypeT_DOTAChannelType_Lobby, false)
+			if err != nil {
+				log.Printf("[bot] failed to join lobby chat: %v", err)
+				return
+			}
+			log.Printf("[bot] joined lobby chat (channelID=%d)", resp.GetChannelId())
+		}()
+	} else {
+		log.Println("[bot] warning: could not read lobby ID from cache — lobby chat unavailable")
+	}
+
 	// Kick the bot out of its team slot so it doesn't occupy a player slot.
 	// The bot retains host status and stays in the unassigned pool.
 	botID := s.botAccountID.Load()
@@ -447,6 +452,36 @@ func (s *Service) signalStart() {
 		default:
 		}
 	}
+}
+
+// currentLobbyID reads the current lobby ID from go-dota2's unexported SOCache
+// field. The go-dota2 module version is pinned in go.mod so the struct layout
+// is stable. Returns 0, false if no lobby is currently in the cache.
+func currentLobbyID(d *dota2.Dota2) (uint64, bool) {
+	t := reflect.TypeOf(*d)
+	f, ok := t.FieldByName("cache")
+	if !ok {
+		return 0, false
+	}
+	// Compute field address. The uintptr arithmetic is a single expression so
+	// the GC cannot move the object between conversion steps.
+	cache := *(**socache.SOCache)(unsafe.Pointer(uintptr(unsafe.Pointer(d)) + f.Offset))
+	if cache == nil {
+		return 0, false
+	}
+	ctr, err := cache.GetContainerForTypeID(uint32(cso.Lobby))
+	if err != nil {
+		return 0, false
+	}
+	obj := ctr.GetOne()
+	if obj == nil {
+		return 0, false
+	}
+	lobby, ok := obj.(*protocol.CSODOTALobby)
+	if !ok {
+		return 0, false
+	}
+	return lobby.GetLobbyId(), true
 }
 
 func parseSteamID(s string) (steamid.SteamId, error) {
