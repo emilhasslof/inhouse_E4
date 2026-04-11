@@ -338,16 +338,11 @@ func (s *Service) CreateLobbyAndInvite(players []db.Player, gameMode string) {
 		return
 	}
 
-	s.gcMu.Lock()
-	ready := s.gcReady
-	s.gcMu.Unlock()
-	select {
-	case <-ready:
-	case <-time.After(60 * time.Second):
-		s.lobbyMu.Unlock()
-		log.Println("[bot] timed out waiting for GC — cannot create lobby")
-		return
-	}
+	// Skip the GCConnectionStatus_HAVE_SESSION wait — LeaveCreateLobby works
+	// regardless of whether the GC has formally acknowledged the session.
+	// On Railway, HAVE_SESSION is unreliable due to unknown shared object type
+	// id: 2013 parsing failures, so waiting for it causes lobby creation to
+	// time out every time.
 
 	dotaGameMode := uint32(protocol.DOTA_GameMode_DOTA_GAMEMODE_CM)
 	if gameMode == "all_pick" {
