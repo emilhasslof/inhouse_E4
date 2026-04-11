@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# create-lobby.sh — Register HACKERMAN (if needed) and create a lobby on the local dev server.
+# create-lobby.sh — Register HACKERMAN (if needed) and create a lobby.
+# Usage: ./create-lobby.sh [--prod]
 
 API_BASE="http://localhost:8080"
+if [ "${1:-}" = "--prod" ]; then
+    API_BASE="https://inhousee4-production.up.railway.app"
+fi
+
 STEAM_ID="76561197990491029"
 DISPLAY_NAME="HACKERMAN"
 
