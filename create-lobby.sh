@@ -28,4 +28,4 @@ fi
 echo "Creating lobby..."
 curl -s -X POST "$API_BASE/api/lobby/create" \
     -H "Content-Type: application/json" \
-    -d "{\"steam_ids\":[\"$STEAM_ID\"]}" | python3 -m json.tool
+    -d "{\"steam_ids\":[\"$STEAM_ID\"],\"game_mode\":\"all_pick\"}" | python3 -m json.tool
