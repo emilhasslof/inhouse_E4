@@ -161,19 +161,23 @@ func (h *Handler) Receive(w http.ResponseWriter, r *http.Request) {
 	// Authenticate via pre-shared per-player token.
 	player, err := h.db.PlayerByToken(r.Context(), p.Auth.Token)
 	if err != nil {
+		log.Printf("[gsi] gate=%s token=%.8s... → 401 unknown token", h.gate.State(), p.Auth.Token)
 		http.Error(w, "", http.StatusUnauthorized)
 		return
 	}
 
 	// No match ID means we're in a menu or draft — nothing to record.
 	if p.Map.MatchID == "" {
+		log.Printf("[gsi] gate=%s player=%s state=%s matchID=(empty) → skipped", h.gate.State(), player.DisplayName, p.Map.GameState)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 
-	// Confirmation check: drop packets until 3 registered players agree on the
-	// same match ID. Once locked, only the confirmed match ID passes through,
-	// which prevents concurrent matchmaking games from polluting the stats.
+	log.Printf("[gsi] gate=%s player=%s matchID=%s state=%s clock=%d",
+		h.gate.State(), player.DisplayName, p.Map.MatchID, p.Map.GameState, p.Map.ClockTime)
+
+	// Confirmation check: drop packets until enough registered players agree on
+	// the same match ID. Once locked, only the confirmed match ID passes through.
 	if !h.gate.Accept(p.Map.MatchID, player.SteamID) {
 		w.WriteHeader(http.StatusOK)
 		return

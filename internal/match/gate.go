@@ -59,6 +59,22 @@ func (g *Gate) IsOpen() bool {
 	return g.open && time.Now().Before(g.expiresAt)
 }
 
+// State returns a short human-readable description of the current gate state.
+func (g *Gate) State() string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if !g.open {
+		return "closed"
+	}
+	if time.Now().After(g.expiresAt) {
+		return "expired"
+	}
+	if g.lockedMatchID != "" {
+		return "locked(" + g.lockedMatchID + ")"
+	}
+	return "open"
+}
+
 // Accept reports whether a packet for matchID from playerSteamID should be
 // stored. It drives the confirmation state machine:
 //
