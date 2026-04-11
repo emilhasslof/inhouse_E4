@@ -17,6 +17,7 @@ Mark items done with `[x]` when complete, or remove them.
 
 ## Done
 
+- [x] Bot GC reconnect hardening — `DisconnectedEvent` now calls `connectWithRetry` (full retry loop) instead of a one-shot `Connect()`. `gcReady`/`gcAbort` channels are reset on each `LoggedOnEvent` so reconnects get a fresh GC session. `lobbyMu` is now held for the entire lobby lifetime (creation + `!start` wait) to prevent concurrent `LeaveCreateLobby` calls from multiple frontend POSTs. `!start` now also accepted via Steam direct message (independent of GC session state).
 - [x] Draft tracking — `match_draft` table + `GET /api/matches/{id}/draft`. Populated from POST_GAME GSI packets (Captain's Mode only — All Pick has no draft block). team3=radiant, team2=dire per Dota 2 internal numbering.
 - [x] Bot hard reset endpoint — `POST /api/lobby/reset` tears down the Steam connection and reconnects from scratch. Implemented via `bot.Manager` which owns the `Service` lifecycle.
 - [x] Lobby invites now use Steam IDs instead of display names — `POST /api/lobby/create` accepts `{ steam_ids: string[] }` and returns 400 with the unmatched IDs if any are not registered.

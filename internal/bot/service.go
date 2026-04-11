@@ -68,8 +68,9 @@ type Service struct {
 	client *steam.Client
 	dota   *dota2.Dota2
 
-	gcReady     chan struct{}
-	gcReadyOnce sync.Once
+	gcMu    sync.Mutex
+	gcReady chan struct{} // guarded by gcMu; reset on each LoggedOnEvent
+	gcAbort chan struct{} // guarded by gcMu; closed to stop the current SayHello goroutine
 
 	botAccountID atomic.Uint32
 	onConnected  func() // called once on first ConnectedEvent
@@ -110,6 +111,7 @@ func New(gate *match.Gate) *Service {
 		client:     client,
 		dota:       d,
 		gcReady:    make(chan struct{}),
+		gcAbort:    make(chan struct{}),
 		resetCh:    make(chan struct{}),
 	}
 }
@@ -197,6 +199,18 @@ func (s *Service) Start(ctx context.Context) {
 			case *steam.LoggedOnEvent:
 				log.Printf("[bot] logged in (steamID: %d)", e.ClientSteamId)
 				s.botAccountID.Store(uint32(e.ClientSteamId))
+
+				// Reset GC ready state for this new session.
+				// Close the old abort channel to stop any previous SayHello goroutine,
+				// then create fresh channels for the new session.
+				s.gcMu.Lock()
+				close(s.gcAbort)
+				s.gcAbort = make(chan struct{})
+				s.gcReady = make(chan struct{})
+				abortCh := s.gcAbort
+				readyCh := s.gcReady
+				s.gcMu.Unlock()
+
 				s.client.GC.SetGamesPlayed(uint64(dota2.AppID))
 				s.dota.SayHello()
 				// Retry SayHello every 10s until the GC acknowledges us.
@@ -205,7 +219,9 @@ func (s *Service) Start(ctx context.Context) {
 					defer t.Stop()
 					for {
 						select {
-						case <-s.gcReady:
+						case <-readyCh:
+							return
+						case <-abortCh:
 							return
 						case <-t.C:
 							log.Println("[bot] GC not ready yet — retrying SayHello")
@@ -217,7 +233,15 @@ func (s *Service) Start(ctx context.Context) {
 			case *events.GCConnectionStatusChanged:
 				log.Printf("[bot] GC status: %v", e.NewState)
 				if e.NewState == protocol.GCConnectionStatus_GCConnectionStatus_HAVE_SESSION {
-					s.gcReadyOnce.Do(func() { close(s.gcReady) })
+					s.gcMu.Lock()
+					ch := s.gcReady
+					s.gcMu.Unlock()
+					select {
+					case <-ch:
+						// already closed for this session
+					default:
+						close(ch)
+					}
 				}
 
 			case *events.ChatMessage:
@@ -225,31 +249,19 @@ func (s *Service) Start(ctx context.Context) {
 					log.Printf("[bot] GC chat from %s: %q", e.GetPersonaName(), e.GetText())
 				}
 				if e.GetText() == "!start" {
-					s.startMu.Lock()
-					ch := s.startCh
-					s.startMu.Unlock()
-					if ch != nil {
-						select {
-						case ch <- struct{}{}:
-						default:
-						}
-					}
+					log.Printf("[bot] !start received (GC chat) from %s", e.GetPersonaName())
+					s.signalStart()
 				}
 
+			// Also accept !start via Steam direct message, which works
+			// regardless of GC session state.
 			case *steam.ChatMsgEvent:
 				if os.Getenv("BOT_LOG_CHAT") != "" {
 					log.Printf("[bot] Steam chat from %d: %q", e.ChatterId, e.Message)
 				}
 				if e.IsMessage() && e.Message == "!start" {
-					s.startMu.Lock()
-					ch := s.startCh
-					s.startMu.Unlock()
-					if ch != nil {
-						select {
-						case ch <- struct{}{}:
-						default:
-						}
-					}
+					log.Printf("[bot] !start received (Steam DM) from %d", e.ChatterId)
+					s.signalStart()
 				}
 
 			case *steam.FriendStateEvent:
@@ -272,8 +284,7 @@ func (s *Service) Start(ctx context.Context) {
 				log.Println("[bot] disconnected from Steam — reconnecting in 5s...")
 				time.AfterFunc(5*time.Second, func() {
 					if ctx.Err() == nil {
-						addr := s.client.Connect()
-						log.Printf("[bot] reconnecting to Steam at %v", addr)
+						go s.connectWithRetry(ctx)
 					}
 				})
 
@@ -305,8 +316,11 @@ func (s *Service) CreateLobbyAndInvite(players []db.Player) {
 	}
 	defer s.lobbyMu.Unlock()
 
+	s.gcMu.Lock()
+	ready := s.gcReady
+	s.gcMu.Unlock()
 	select {
-	case <-s.gcReady:
+	case <-ready:
 	case <-time.After(60 * time.Second):
 		log.Println("[bot] timed out waiting for GC — cannot create lobby")
 		return
@@ -369,7 +383,11 @@ func (s *Service) CreateLobbyAndInvite(players []db.Player) {
 	resetCh := s.resetCh
 	s.startMu.Unlock()
 
-	go s.waitForStart(ch, resetCh)
+	// Call inline (not goroutine) so lobbyMu stays held until the lobby is
+	// fully done. CreateLobbyAndInvite is already running in its own goroutine
+	// (see web/handlers.go), so blocking here is safe and prevents a second
+	// POST from starting a new LeaveCreateLobby while one is active.
+	s.waitForStart(ch, resetCh)
 }
 
 // waitForStart blocks until !start is received in lobby chat, then opens the
@@ -398,6 +416,19 @@ func (s *Service) waitForStart(startCh chan struct{}, resetCh chan struct{}) {
 }
 
 
+
+// signalStart sends to startCh if a lobby is currently waiting for !start.
+func (s *Service) signalStart() {
+	s.startMu.Lock()
+	ch := s.startCh
+	s.startMu.Unlock()
+	if ch != nil {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+}
 
 func parseSteamID(s string) (steamid.SteamId, error) {
 	id, err := strconv.ParseUint(s, 10, 64)
