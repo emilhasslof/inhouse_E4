@@ -221,8 +221,26 @@ func (s *Service) Start(ctx context.Context) {
 				}
 
 			case *events.ChatMessage:
+				if os.Getenv("BOT_LOG_CHAT") != "" {
+					log.Printf("[bot] GC chat from %s: %q", e.GetPersonaName(), e.GetText())
+				}
 				if e.GetText() == "!start" {
-					log.Printf("[bot] !start received from %s", e.GetPersonaName())
+					s.startMu.Lock()
+					ch := s.startCh
+					s.startMu.Unlock()
+					if ch != nil {
+						select {
+						case ch <- struct{}{}:
+						default:
+						}
+					}
+				}
+
+			case *steam.ChatMsgEvent:
+				if os.Getenv("BOT_LOG_CHAT") != "" {
+					log.Printf("[bot] Steam chat from %d: %q", e.ChatterId, e.Message)
+				}
+				if e.IsMessage() && e.Message == "!start" {
 					s.startMu.Lock()
 					ch := s.startCh
 					s.startMu.Unlock()
