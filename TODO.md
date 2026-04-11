@@ -10,7 +10,7 @@ Mark items done with `[x]` when complete, or remove them.
 ## Backlog
 
 - [ ] **Live match view** — add a polling endpoint (e.g. `GET /api/match/live`) returning current state for an in-progress match: scoreline, player K/D/A/gold, hero names, and building status per team. Building visibility is limited to own-team buildings in GSI, so enemy tower/barracks state would need to be inferred by combining feeds from both teams. This is a different UX from finished match pages — needs a polling interval, live scoreboard, and no final duration yet. Design the minimum viable payload before touching the DB.
-- [ ] **Add a persistent Railway volume** before real matches begin — the database currently lives in ephemeral container storage and resets on every redeploy.
+- [x] **Persistent Railway volume** — volume `inhouse_e4-volume` mounted at `/data`, `DB_PATH=/data/inhouse.db` set in Railway env. DB survives redeploys.
 - [ ] **Gold-over-time graph** on the match detail page — the data is already in `gsi_snapshots`, just needs a query and a frontend chart.
 - [ ] **Kill timeline** — `player.kill_list` in GSI maps victim slot to kill count within the current streak. Kill events can be reconstructed by diffing consecutive snapshots in `gsi_snapshots`.
 - [ ] **Nemesis streaks** — for every ordered player pair (A, B), track how many consecutive times A has killed B without B killing A back. Streaks accumulate across matches and reset when the victim gets a kill back. Expose the current top streaks at `GET /api/stats/nemesis`. Requires kill event detection from snapshot deltas and a new `player_pair_killstreak` table storing current streak and all-time peak per pair.

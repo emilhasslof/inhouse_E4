@@ -141,7 +141,7 @@ Live URL: `https://inhousee4-production.up.railway.app`
 - `APP_ENV=development` — seeds 10 players + 3 fake matches on boot (remove when going live with real players)
 - `DB_PATH=/data/inhouse.db` — set this when a persistent volume is attached
 
-**No persistent volume yet** — DB lives in ephemeral container storage and resets on each deploy. Add a Railway volume mounted at `/data` before running real matches.
+**Persistent volume configured** — volume `inhouse_e4-volume` is mounted at `/data`. `DB_PATH=/data/inhouse.db` is set in Railway env. DB survives redeploys.
 
 **Simulating matches against production:**
 ```bash
