@@ -245,6 +245,9 @@ func (s *Service) Start(ctx context.Context) {
 				}
 
 			case *events.ChatMessage:
+				if os.Getenv("BOT_LOG_CHAT") != "" {
+					log.Printf("[bot] GC chat from %s: %q", e.GetPersonaName(), e.GetText())
+				}
 				if e.GetText() == "!start" {
 					log.Printf("[bot] !start received (GC chat) from %s", e.GetPersonaName())
 					s.signalStart()
@@ -253,6 +256,9 @@ func (s *Service) Start(ctx context.Context) {
 			// Also accept !start via Steam direct message, which works
 			// regardless of GC session state.
 			case *steam.ChatMsgEvent:
+				if os.Getenv("BOT_LOG_CHAT") != "" {
+					log.Printf("[bot] Steam chat from %d: %q", e.ChatterId, e.Message)
+				}
 				if e.IsMessage() && e.Message == "!start" {
 					log.Printf("[bot] !start received (Steam DM) from %d", e.ChatterId)
 					s.signalStart()
