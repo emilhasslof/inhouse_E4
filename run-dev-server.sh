@@ -3,4 +3,4 @@
 # Automatically seeds the 10 datagen players into the database.
 # Open http://localhost:8080 once running.
 
-APP_ENV=development go run ./cmd/server
+GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn go run ./cmd/server
