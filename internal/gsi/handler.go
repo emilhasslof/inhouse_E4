@@ -158,10 +158,14 @@ func (h *Handler) Receive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Authenticate via pre-shared per-player token.
-	player, err := h.db.PlayerByToken(r.Context(), p.Auth.Token)
+	// Authenticate via Steam ID in the payload.
+	if p.Player.SteamID == "" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	player, err := h.db.PlayerBySteamID(r.Context(), p.Player.SteamID)
 	if err != nil {
-		log.Printf("[gsi] gate=%s token=%.8s... → 401 unknown token", h.gate.State(), p.Auth.Token)
+		log.Printf("[gsi] gate=%s steamID=%s → 401 unregistered", h.gate.State(), p.Player.SteamID)
 		http.Error(w, "", http.StatusUnauthorized)
 		return
 	}

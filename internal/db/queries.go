@@ -157,6 +157,19 @@ func (db *DB) PlayerByToken(ctx context.Context, token string) (*Player, error) 
 	return p, err
 }
 
+// PlayerBySteamID returns the player with the given Steam ID.
+// Returns an error if not found.
+func (db *DB) PlayerBySteamID(ctx context.Context, steamID string) (*Player, error) {
+	row := db.conn.QueryRowContext(ctx,
+		`SELECT id, steam_id, display_name, token FROM players WHERE steam_id = ?`, steamID)
+	p := &Player{}
+	err := row.Scan(&p.ID, &p.SteamID, &p.DisplayName, &p.Token)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("unknown steam_id")
+	}
+	return p, err
+}
+
 // UpsertMatch creates a match row for the given Dota match ID if one does not
 // already exist, then returns the match's internal database ID.
 func (db *DB) UpsertMatch(ctx context.Context, dotaMatchID string) (int64, error) {

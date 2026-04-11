@@ -46,10 +46,9 @@ func sendGSI(t *testing.T, h *gsi.Handler, payload any) *http.Response {
 	return w.Result()
 }
 
-// inProgressPayload builds a standard in-progress GSI payload for the given token.
-func inProgressPayload(token, matchID string) map[string]any {
+// inProgressPayload builds a standard in-progress GSI payload for the given steamID.
+func inProgressPayload(steamID, matchID string) map[string]any {
 	return map[string]any{
-		"auth": map[string]any{"token": token},
 		"map": map[string]any{
 			"matchid":       matchID,
 			"clock_time":    120,
@@ -59,6 +58,7 @@ func inProgressPayload(token, matchID string) map[string]any {
 			"dire_score":    2,
 		},
 		"player": map[string]any{
+			"steamid":   steamID,
 			"team_name": "radiant",
 			"kills":     2,
 			"deaths":    1,
@@ -91,22 +91,19 @@ func postGamePayload(token, matchID string) map[string]any {
 	return p
 }
 
-// confirmMatch sends minimal in-progress packets from 3 different registered
-// players so the gate locks to matchID. The first two packets are silently
-// dropped; the third tips the count and the gate locks — subsequent sends are
-// accepted normally. Requires a seeded DB (datagen-radiant-1/2/3 must exist).
+// confirmMatch sends minimal in-progress packets from registered players so the
+// gate locks to matchID. Requires a seeded DB (datagen-steam-r1/r2/r3 must exist).
 func confirmMatch(t *testing.T, h *gsi.Handler, matchID string) {
 	t.Helper()
-	for _, token := range []string{"datagen-radiant-1", "datagen-radiant-2", "datagen-radiant-3"} {
+	for _, steamID := range []string{"datagen-steam-r1", "datagen-steam-r2", "datagen-steam-r3"} {
 		sendGSI(t, h, map[string]any{
-			"auth": map[string]any{"token": token},
 			"map": map[string]any{
 				"matchid":    matchID,
 				"clock_time": 30,
 				"game_time":  30,
 				"game_state": "DOTA_GAMERULES_STATE_GAME_IN_PROGRESS",
 			},
-			"player": map[string]any{},
+			"player": map[string]any{"steamid": steamID},
 			"hero":   map[string]any{},
 		})
 	}
@@ -114,12 +111,13 @@ func confirmMatch(t *testing.T, h *gsi.Handler, matchID string) {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-func TestReceive_UnknownToken(t *testing.T) {
+func TestReceive_UnregisteredSteamID(t *testing.T) {
 	d := newSeededDB(t)
 	h := gsi.New(d, openGate())
 
 	resp := sendGSI(t, h, map[string]any{
-		"auth": map[string]any{"token": "not-a-real-token"},
+		"map":    map[string]any{"matchid": "match-xxx", "game_state": "DOTA_GAMERULES_STATE_GAME_IN_PROGRESS"},
+		"player": map[string]any{"steamid": "not-a-real-steam-id"},
 	})
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
@@ -129,8 +127,8 @@ func TestReceive_NoMatchID(t *testing.T) {
 	h := gsi.New(d, openGate())
 
 	resp := sendGSI(t, h, map[string]any{
-		"auth": map[string]any{"token": "datagen-radiant-1"},
-		"map":  map[string]any{"matchid": ""},
+		"map":    map[string]any{"matchid": ""},
+		"player": map[string]any{"steamid": "datagen-steam-r1"},
 	})
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -144,7 +142,7 @@ func TestReceive_InProgress(t *testing.T) {
 	h := gsi.New(d, openGate())
 	confirmMatch(t, h, "match-live-001")
 
-	resp := sendGSI(t, h, inProgressPayload("datagen-radiant-1", "match-live-001"))
+	resp := sendGSI(t, h, inProgressPayload("datagen-steam-r1", "match-live-001"))
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	matches, err := d.ListMatches(context.Background())
@@ -165,7 +163,7 @@ func TestReceive_PostGame(t *testing.T) {
 	ctx := context.Background()
 	confirmMatch(t, h, "match-pg-001")
 
-	resp := sendGSI(t, h, postGamePayload("datagen-radiant-1", "match-pg-001"))
+	resp := sendGSI(t, h, postGamePayload("datagen-steam-r1", "match-pg-001"))
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	matches, err := d.ListMatches(ctx)
@@ -189,7 +187,7 @@ func TestReceive_PostGame_Idempotent(t *testing.T) {
 	ctx := context.Background()
 	confirmMatch(t, h, "match-idem-001")
 
-	payload := postGamePayload("datagen-radiant-1", "match-idem-001")
+	payload := postGamePayload("datagen-steam-r1", "match-idem-001")
 	sendGSI(t, h, payload)
 	sendGSI(t, h, payload) // send again
 
