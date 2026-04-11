@@ -328,6 +328,8 @@ func (s *Service) CreateLobbyAndInvite(players []db.Player) {
 			continue
 		}
 		s.dota.InviteLobbyMember(sid)
+		s.client.Social.SendMessage(sid, steamlang.EChatEntryType_ChatMsg,
+			"Lobby is ready! Password: "+s.lobbyPass)
 		log.Printf("[bot] invited %s (%s) to lobby", p.DisplayName, p.SteamID)
 	}
 
