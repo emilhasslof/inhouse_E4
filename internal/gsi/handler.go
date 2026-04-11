@@ -245,10 +245,7 @@ func (h *Handler) Receive(w http.ResponseWriter, r *http.Request) {
 			p.Map.RadiantScore, p.Map.DireScore, p.Map.WinTeam, p.Map.GameTime); err != nil {
 			log.Printf("[gsi] complete match %d: %v", matchID, err)
 		}
-		// Match is over — close the gate so future packets (from e.g. datagen
-		// or a second client that didn't get the post-game state yet) are dropped.
-		h.gate.Close()
-		log.Println("[gsi] match completed — gate closed")
+		h.gate.PostGame(player.SteamID)
 	}
 
 	w.WriteHeader(http.StatusOK)
