@@ -18,8 +18,6 @@ NC='\033[0m'
 echo ""
 echo -e "${CYAN}=== Inhouse League Registration ===${NC}"
 echo ""
-read -rp "Press Enter to start"
-echo ""
 
 # --- Locate Steam -----------------------------------------------------------
 
@@ -77,12 +75,8 @@ fi
 
 # --- Display name -----------------------------------------------------------
 
-echo ""
-read -rp "Enter your display name (shown on the leaderboard): " DISPLAY_NAME
-if [ -z "$DISPLAY_NAME" ]; then
-    echo -e "${RED}Display name cannot be empty.${NC}"
-    exit 1
-fi
+DISPLAY_NAME="$CHOSEN_NAME"
+echo "Using Steam name: $DISPLAY_NAME"
 
 # --- Register with backend --------------------------------------------------
 
@@ -155,7 +149,6 @@ echo "  $BOT_PROFILE"
 echo -e "${CYAN}Click 'Add as Friend' and the bot will accept automatically.${NC}"
 echo -e "${GRAY}--------------------------------------------------------------${NC}"
 echo ""
-read -rp "Press Enter to also open the link in your browser"
 xdg-open "$BOT_PROFILE" 2>/dev/null || true
 echo ""
 echo -e "${GREEN}Done! You're all set.${NC}"
