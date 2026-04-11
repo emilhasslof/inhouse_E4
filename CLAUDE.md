@@ -38,7 +38,7 @@ Player's Dota client → POST /gsi → Go HTTP server → SQLite (data/inhouse.d
 | GET | /api/stats/heroes | Hero pick/win counts |
 | GET | /api/stats/overview | League-wide aggregate stats |
 | GET | /api/registered-players | All registered players (display_name, steam_id) |
-| POST | /api/lobby/create | Create lobby + invite players — takes `{steam_ids: string[]}`. 400 if any ID unregistered. |
+| POST | /api/lobby/create | Create lobby + invite players — takes `{steam_ids: string[], game_mode?: "captains_mode"\|"all_pick"}` (default: `"captains_mode"`). Cheats always enabled. 400 if any ID unregistered. |
 | POST | /api/lobby/reset | Hard-reset the bot (abandon lobby, kill connection, reconnect). 503 if bot not configured. |
 
 CORS is open (`*`) so the frontend can call from any origin.

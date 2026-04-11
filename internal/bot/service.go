@@ -309,7 +309,8 @@ func (s *Service) Start(ctx context.Context) {
 // lobby invites to each player, then listens for !start in lobby chat. When
 // !start is received the gate opens and the lobby launches. Designed to run in
 // a goroutine — errors are logged, not returned.
-func (s *Service) CreateLobbyAndInvite(players []db.Player) {
+// gameMode must be "captains_mode" or "all_pick" (default: "captains_mode").
+func (s *Service) CreateLobbyAndInvite(players []db.Player, gameMode string) {
 	if !s.lobbyMu.TryLock() {
 		log.Println("[bot] lobby creation already in progress — ignoring duplicate request")
 		return
@@ -326,15 +327,18 @@ func (s *Service) CreateLobbyAndInvite(players []db.Player) {
 		return
 	}
 
-	gameMode := uint32(protocol.DOTA_GameMode_DOTA_GAMEMODE_AP)
+	dotaGameMode := uint32(protocol.DOTA_GameMode_DOTA_GAMEMODE_CM)
+	if gameMode == "all_pick" {
+		dotaGameMode = uint32(protocol.DOTA_GameMode_DOTA_GAMEMODE_AP)
+	}
 	visibility := protocol.DOTALobbyVisibility_DOTALobbyVisibility_Public
 	details := &protocol.CMsgPracticeLobbySetDetails{
 		GameName:        proto.String(s.lobbyName),
 		PassKey:         proto.String(s.lobbyPass),
-		GameMode:        &gameMode,
+		GameMode:        &dotaGameMode,
 		Visibility:      &visibility,
 		ServerRegion:    proto.Uint32(3), // Europe West
-		AllowCheats:     proto.Bool(false),
+		AllowCheats:     proto.Bool(true),
 		AllowSpectating: proto.Bool(true),
 	}
 

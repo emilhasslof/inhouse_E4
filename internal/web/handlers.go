@@ -16,7 +16,7 @@ import (
 // Defined as an interface so the web package does not need to import bot,
 // keeping go-steam out of test binaries.
 type LobbyCreator interface {
-	CreateLobbyAndInvite(players []db.Player)
+	CreateLobbyAndInvite(players []db.Player, gameMode string)
 	Reset()
 }
 
@@ -86,8 +86,8 @@ var specJSON = []byte(`{
     {
       "method": "POST",
       "path": "/api/lobby/create",
-      "description": "Create a Dota 2 lobby and invite the given players. Returns immediately. 400 if any Steam ID is not registered.",
-      "body": "{ steam_ids: string[] }",
+      "description": "Create a Dota 2 lobby and invite the given players. Cheats are always enabled. Returns immediately. 400 if any Steam ID is not registered.",
+      "body": "{ steam_ids: string[], game_mode?: 'captains_mode' | 'all_pick' (default: 'captains_mode') }",
       "returns": "{ ok: true }"
     },
     {
@@ -255,13 +255,18 @@ func (h *Handler) LeagueOverview(w http.ResponseWriter, r *http.Request) {
 // CreateLobby handles POST /api/lobby/create
 // Resolves Steam IDs to DB records, then triggers the bot to create a Dota 2
 // lobby and invite each player. Returns 400 if any Steam ID is not registered.
+// game_mode accepts "captains_mode" or "all_pick"; defaults to "captains_mode".
 func (h *Handler) CreateLobby(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		SteamIDs []string `json:"steam_ids"`
+		GameMode string   `json:"game_mode"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.SteamIDs) == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "steam_ids list required"})
 		return
+	}
+	if body.GameMode != "all_pick" {
+		body.GameMode = "captains_mode"
 	}
 
 	players, err := h.db.PlayersBySteamIDs(r.Context(), body.SteamIDs)
@@ -290,7 +295,7 @@ func (h *Handler) CreateLobby(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.bot != nil {
-		go h.bot.CreateLobbyAndInvite(players)
+		go h.bot.CreateLobbyAndInvite(players, body.GameMode)
 	} else {
 		log.Println("[api] lobby create — bot not configured, skipping")
 	}
