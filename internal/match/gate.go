@@ -46,6 +46,9 @@ func (g *Gate) Open() {
 func (g *Gate) Close() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if g.open {
+		log.Println("[gate] closed — match completed")
+	}
 	g.open = false
 	g.lockedMatchID = ""
 	g.candidates = nil
@@ -56,7 +59,13 @@ func (g *Gate) Close() {
 func (g *Gate) IsOpen() bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.open && time.Now().Before(g.expiresAt)
+	if g.open && time.Now().After(g.expiresAt) {
+		log.Println("[gate] closed — TTL expired")
+		g.open = false
+		g.lockedMatchID = ""
+		g.candidates = nil
+	}
+	return g.open
 }
 
 // State returns a short human-readable description of the current gate state.
@@ -87,7 +96,7 @@ func (g *Gate) Accept(matchID, playerSteamID string) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	if !g.open || time.Now().After(g.expiresAt) {
+	if !g.open {
 		return false
 	}
 
