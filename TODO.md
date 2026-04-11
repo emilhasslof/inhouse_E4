@@ -7,6 +7,8 @@ Mark items done with `[x]` when complete, or remove them.
 
 ## Up next
 
+- [ ] **Fix GC wait blocking lobby creation** — `CreateLobbyAndInvite` waits 60s for `GCConnectionStatus_HAVE_SESSION` before attempting `LeaveCreateLobby`. In practice `HAVE_SESSION` never fires reliably on Railway (known `unknown shared object type id: 2013` issue), causing the lobby create to time out and the match gate to never open. Fix: remove the gcReady wait and call `LeaveCreateLobby` directly — it works regardless of GC session state.
+
 ## Backlog
 
 - [ ] **Live match view** — add a polling endpoint (e.g. `GET /api/match/live`) returning current state for an in-progress match: scoreline, player K/D/A/gold, hero names, and building status per team. Building visibility is limited to own-team buildings in GSI, so enemy tower/barracks state would need to be inferred by combining feeds from both teams. This is a different UX from finished match pages — needs a polling interval, live scoreboard, and no final duration yet. Design the minimum viable payload before touching the DB.
@@ -17,6 +19,7 @@ Mark items done with `[x]` when complete, or remove them.
 
 ## Done
 
+- [x] Schema migration added for `win_team` column — `ALTER TABLE` runs on startup so existing DBs are upgraded without needing a full wipe.
 - [x] Win/loss determination now uses `win_team` from GSI POST_GAME packets instead of kill score comparison.
 - [x] Lobby cheats always enabled; `POST /api/lobby/create` accepts `game_mode: "captains_mode" | "all_pick"` (default: captains_mode).
 - [x] Match gate confirmation threshold lowered to 2 players.

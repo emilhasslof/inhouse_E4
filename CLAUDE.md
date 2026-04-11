@@ -171,6 +171,13 @@ VALUES ('76561197990491029', 'PlayerName', 'abc123...');
 - Lobby cheats are always enabled (`AllowCheats: true`). Game mode defaults to Captain's Mode; pass `game_mode: "all_pick"` to override.
 - Register scripts (`register.sh` / `register.bat`) use the Steam persona name from `loginusers.vdf` — no manual name entry. Already-registered players still get the bot friend prompt.
 
+## Schema Migrations
+
+`CREATE TABLE IF NOT EXISTS` in `schemaSQL` only creates tables on first run — it does not add new columns to existing tables. New columns must be added as `ALTER TABLE ... ADD COLUMN` statements in the `additiveMigrations` slice in `db.go:migrate()`. These are safe to re-run (SQLite's "duplicate column name" error is swallowed).
+
+**Migrated columns so far:**
+- `matches.win_team TEXT NOT NULL DEFAULT ''` — added after initial schema, captures winning team from GSI POST_GAME.
+
 ## Key Findings / Dead Ends
 
 ### Why not the GC API for match stats?
