@@ -78,7 +78,6 @@ Post-game detection: when `map.game_state == "DOTA_GAMERULES_STATE_POST_GAME"`, 
 | `internal/gsi/handler.go` | `POST /gsi` — auth, snapshot insert, post-game detection |
 | `internal/web/handlers.go` | JSON API handlers for all `/api/*` endpoints |
 | `internal/web/routes.go` | Chi router — GSI ingest + API routes + CORS middleware |
-| `gsi/main.go` | Original local GSI debug receiver (reference only, not used in prod) |
 | `data/` | SQLite database files — gitignored |
 | `.env` | Steam credentials — gitignored |
 | `Dockerfile` | Builds `cmd/server` only (datagen is never included) |

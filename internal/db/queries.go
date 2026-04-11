@@ -28,20 +28,21 @@ func (db *DB) RegisterPlayer(ctx context.Context, steamID, displayName string) (
 	return &Player{SteamID: steamID, DisplayName: displayName, Token: token}, nil
 }
 
-// PlayersByDisplayNames returns all registered players whose display_name is in
-// the provided list. Unrecognised names are silently skipped.
-func (db *DB) PlayersByDisplayNames(ctx context.Context, names []string) ([]Player, error) {
-	if len(names) == 0 {
+// PlayersBySteamIDs returns all registered players whose steam_id is in the
+// provided list. The caller can detect unmatched IDs by comparing the returned
+// slice length (or the SteamID values) against the input list.
+func (db *DB) PlayersBySteamIDs(ctx context.Context, steamIDs []string) ([]Player, error) {
+	if len(steamIDs) == 0 {
 		return nil, nil
 	}
-	placeholders := strings.Repeat("?,", len(names))
+	placeholders := strings.Repeat("?,", len(steamIDs))
 	placeholders = placeholders[:len(placeholders)-1] // trim trailing comma
-	args := make([]any, len(names))
-	for i, n := range names {
-		args[i] = n
+	args := make([]any, len(steamIDs))
+	for i, id := range steamIDs {
+		args[i] = id
 	}
 	rows, err := db.conn.QueryContext(ctx,
-		`SELECT id, steam_id, display_name, token FROM players WHERE display_name IN (`+placeholders+`)`,
+		`SELECT id, steam_id, display_name, token FROM players WHERE steam_id IN (`+placeholders+`)`,
 		args...)
 	if err != nil {
 		return nil, err

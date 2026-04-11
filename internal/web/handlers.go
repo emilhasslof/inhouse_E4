@@ -71,13 +71,21 @@ var specJSON = []byte(`{
     },
     {
       "method": "POST",
+      "path": "/api/register",
+      "description": "Register a new player. Returns a GSI auth token. 409 if the Steam ID is already registered.",
+      "body": "{ steam_id: string, display_name: string }",
+      "returns": "{ token: string }"
+    },
+    {
+      "method": "POST",
       "path": "/api/lobby/create",
-      "description": "Create a Dota 2 lobby and invite the given players. Returns immediately.",
-      "body": "{ players: string[] }",
+      "description": "Create a Dota 2 lobby and invite the given players. Returns immediately. 400 if any Steam ID is not registered.",
+      "body": "{ steam_ids: string[] }",
       "returns": "{ ok: true }"
     }
   ]
 }`)
+
 
 // Spec handles GET /api — returns a JSON listing of all available endpoints.
 func (h *Handler) Spec(w http.ResponseWriter, r *http.Request) {
@@ -232,21 +240,39 @@ func (h *Handler) LeagueOverview(w http.ResponseWriter, r *http.Request) {
 }
 
 // CreateLobby handles POST /api/lobby/create
-// Resolves player display names to DB records, then triggers the bot to create
-// a Dota 2 lobby and invite each player. Returns immediately.
+// Resolves Steam IDs to DB records, then triggers the bot to create a Dota 2
+// lobby and invite each player. Returns 400 if any Steam ID is not registered.
 func (h *Handler) CreateLobby(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Players []string `json:"players"`
+		SteamIDs []string `json:"steam_ids"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.Players) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "players list required"})
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.SteamIDs) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "steam_ids list required"})
 		return
 	}
 
-	players, err := h.db.PlayersByDisplayNames(r.Context(), body.Players)
+	players, err := h.db.PlayersBySteamIDs(r.Context(), body.SteamIDs)
 	if err != nil {
 		log.Printf("[api] lobby create — player lookup: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+
+	if len(players) != len(body.SteamIDs) {
+		found := make(map[string]bool, len(players))
+		for _, p := range players {
+			found[p.SteamID] = true
+		}
+		var unmatched []string
+		for _, id := range body.SteamIDs {
+			if !found[id] {
+				unmatched = append(unmatched, id)
+			}
+		}
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error":     "unrecognised steam IDs",
+			"unmatched": unmatched,
+		})
 		return
 	}
 
