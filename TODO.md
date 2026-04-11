@@ -7,8 +7,6 @@ Mark items done with `[x]` when complete, or remove them.
 
 ## Up next
 
-- [ ] **Fix GC wait blocking lobby creation** — `CreateLobbyAndInvite` waits 60s for `GCConnectionStatus_HAVE_SESSION` before attempting `LeaveCreateLobby`. In practice `HAVE_SESSION` never fires reliably on Railway (known `unknown shared object type id: 2013` issue), causing the lobby create to time out and the match gate to never open. Fix: remove the gcReady wait and call `LeaveCreateLobby` directly — it works regardless of GC session state.
-
 ## Backlog
 
 - [ ] **Raise match confirmation threshold back to 2 (or more) before going live** — currently set to 1 for solo testing. See `internal/match/gate.go:confirmThreshold`.
