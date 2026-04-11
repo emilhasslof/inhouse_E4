@@ -14,14 +14,17 @@ import (
 
 	"github.com/emilh/inhouse-e4/internal/db"
 	"github.com/emilh/inhouse-e4/internal/gsi"
+	"github.com/emilh/inhouse-e4/internal/match"
 	"github.com/emilh/inhouse-e4/internal/web"
 )
+
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 func newTestServer(t *testing.T, d *db.DB) *httptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(web.NewRouter(gsi.New(d), web.New(d)))
+	gate := new(match.Gate)
+	srv := httptest.NewServer(web.NewRouter(gsi.New(d, gate), web.New(d, nil)))
 	t.Cleanup(srv.Close)
 	return srv
 }

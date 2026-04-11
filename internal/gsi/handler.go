@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/emilh/inhouse-e4/internal/db"
+	"github.com/emilh/inhouse-e4/internal/match"
 )
 
 // Payload mirrors the JSON structure that Dota 2 sends via GSI.
@@ -57,16 +58,24 @@ const postGameState = "DOTA_GAMERULES_STATE_POST_GAME"
 
 // Handler handles POST /gsi requests from Dota 2 clients.
 type Handler struct {
-	db *db.DB
+	db   *db.DB
+	gate *match.Gate
 }
 
-// New creates a new GSI handler backed by the given database.
-func New(database *db.DB) *Handler {
-	return &Handler{db: database}
+// New creates a new GSI handler backed by the given database and match gate.
+func New(database *db.DB, gate *match.Gate) *Handler {
+	return &Handler{db: database, gate: gate}
 }
 
 // Receive processes a single GSI payload from a player's client.
 func (h *Handler) Receive(w http.ResponseWriter, r *http.Request) {
+	// Reject all packets when no lobby is active. Return 200 so Dota doesn't
+	// flag the endpoint as broken and stop sending.
+	if !h.gate.IsOpen() {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	var p Payload
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 		http.Error(w, "", http.StatusBadRequest)
@@ -82,6 +91,14 @@ func (h *Handler) Receive(w http.ResponseWriter, r *http.Request) {
 
 	// No match ID means we're in a menu or draft — nothing to record.
 	if p.Map.MatchID == "" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Confirmation check: drop packets until 3 registered players agree on the
+	// same match ID. Once locked, only the confirmed match ID passes through,
+	// which prevents concurrent matchmaking games from polluting the stats.
+	if !h.gate.Accept(p.Map.MatchID, player.SteamID) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -118,6 +135,10 @@ func (h *Handler) Receive(w http.ResponseWriter, r *http.Request) {
 			p.Map.RadiantScore, p.Map.DireScore, p.Map.GameTime); err != nil {
 			log.Printf("[gsi] complete match %d: %v", matchID, err)
 		}
+		// Match is over — close the gate so future packets (from e.g. datagen
+		// or a second client that didn't get the post-game state yet) are dropped.
+		h.gate.Close()
+		log.Println("[gsi] match completed — gate closed")
 	}
 
 	w.WriteHeader(http.StatusOK)

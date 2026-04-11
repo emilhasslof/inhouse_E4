@@ -8,7 +8,6 @@ Mark items done with `[x]` when complete, or remove them.
 ## Up next
 
 - [ ] Add `POST /api/bot/reset` endpoint to hard-reset the bot (disconnect + reconnect + re-establish GC) — for a frontend admin button
-- [ ] Kick bot from player slot (via `KickLobbyMemberFromTeam`) instead of leaving lobby — bot retains host status and can still handle `!start` in chat
 - [ ] Guard GPM/XPM sampling: ignore values when `clock_time < 10` (values are wildly inflated at match start and normalise quickly)
 
 ## Backlog
@@ -22,6 +21,7 @@ Mark items done with `[x]` when complete, or remove them.
 
 ## Done
 
+- [x] Match gating — GSI ingest only accepts packets when a bot lobby is active. Bot kicks itself from its team slot after lobby creation (retaining host status in unassigned pool), then listens for `!start` in lobby chat. On `!start`, gate opens and bot calls `LaunchLobby()`. Gate closes automatically on POST_GAME. Dev mode pre-opens the gate so datagen works without a bot.
 - [x] `allplayers` investigation — confirmed **never present** for regular players, only for observers. Valve intentionally gates it. All 10 GSI clients are required for complete stats unless we add an observer bot.
 - [x] Bot auto-accepts incoming Steam friend requests — register.bat opens bot profile so players can add it in one click
 - [x] Prove GSI data can be received and parsed locally (`gsi/main.go`)
