@@ -8,7 +8,6 @@ Mark items done with `[x]` when complete, or remove them.
 ## Up next
 
 - [ ] Add `POST /api/bot/reset` endpoint to hard-reset the bot (disconnect + reconnect + re-establish GC) — for a frontend admin button
-- [ ] Guard GPM/XPM sampling: ignore values when `clock_time < 10` (values are wildly inflated at match start and normalise quickly)
 
 ## Backlog
 

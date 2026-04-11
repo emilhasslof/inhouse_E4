@@ -14,7 +14,7 @@ Dota 2 inhouse league stats website for a small group (~10-20 players). Collect 
 
 Two-part system: a Go backend API + a separate React/TypeScript frontend (in `/home/emilh/inhouse-E6/frontend`, built with Lovable/Vite).
 
-The Go backend is a single binary (`cmd/server`) that handles GSI ingest and serves a JSON REST API. SQLite on a Fly.io persistent volume.
+The Go backend is a single binary (`cmd/server`) that handles GSI ingest and serves a JSON REST API. SQLite on a railway persistent volume.
 
 ```
 Player's Dota client → POST /gsi → Go HTTP server → SQLite (data/inhouse.db)
