@@ -230,6 +230,25 @@ func (s *Service) Start(ctx context.Context) {
 					}
 				}()
 
+			case events.ClientStateChanged:
+				// When a lobby first appears in state, join its chat channel so the
+				// bot receives lobby chat messages (GC doesn't route them automatically).
+				if e.OldState.Lobby == nil && e.NewState.Lobby != nil {
+					lobbyID := e.NewState.Lobby.GetLobbyId()
+					channelName := fmt.Sprintf("Lobby_%d", lobbyID)
+					log.Printf("[bot] lobby appeared (id=%d), joining chat channel", lobbyID)
+					go func() {
+						ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+						defer cancel()
+						resp, err := s.dota.JoinChatChannel(ctx, channelName, protocol.DOTAChatChannelTypeT_DOTAChannelType_Lobby, false)
+						if err != nil {
+							log.Printf("[bot] failed to join lobby chat channel: %v", err)
+							return
+						}
+						log.Printf("[bot] joined lobby chat channel (channelID=%d)", resp.GetChannelId())
+					}()
+				}
+
 			case *events.GCConnectionStatusChanged:
 				log.Printf("[bot] GC status: %v", e.NewState)
 				if e.NewState == protocol.GCConnectionStatus_GCConnectionStatus_HAVE_SESSION {
