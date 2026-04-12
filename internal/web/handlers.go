@@ -43,8 +43,9 @@ var specJSON = []byte(`{
     {
       "method": "GET",
       "path": "/api/matches/:id",
-      "description": "Full scoreboard for a single match.",
-      "returns": "{ match: MatchSummary, radiant: PlayerStat[], dire: PlayerStat[] }"
+      "description": "Full scoreboard for a single match. Shape differs by match.state: completed matches include final stats; in-progress matches include live stats with gold and clock_time.",
+      "returns": "{ match: { id, dota_match_id, state, win_team, radiant_score, dire_score, duration_secs, started_at }, radiant: PlayerStat[], dire: PlayerStat[] }",
+      "notes": "PlayerStat: { display_name, hero_name, team_name, kills, deaths, assists, gpm, xpm, last_hits, denies, final_level, gold? (live only), clock_time? (live only) }"
     },
     {
       "method": "GET",
