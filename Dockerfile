@@ -9,6 +9,7 @@ RUN CGO_ENABLED=0 go build -o server ./cmd/server
 
 # Runtime stage — minimal image with just the binary.
 FROM alpine:3.20
+RUN apk add --no-cache sqlite
 WORKDIR /app
 COPY --from=build /app/server .
 
