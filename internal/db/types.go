@@ -52,6 +52,7 @@ type MatchSummary struct {
 }
 
 // PlayerStatRow is one row in the match scoreboard.
+// Gold and ClockTime are only present for in-progress matches (omitted for completed ones).
 type PlayerStatRow struct {
 	DisplayName string `json:"display_name"`
 	HeroName    string `json:"hero_name"`
@@ -64,6 +65,8 @@ type PlayerStatRow struct {
 	LastHits    int    `json:"last_hits"`
 	Denies      int    `json:"denies"`
 	FinalLevel  int    `json:"final_level"`
+	Gold        int    `json:"gold,omitempty"`
+	ClockTime   int    `json:"clock_time,omitempty"`
 }
 
 // MatchDetailView is the full data for the match scoreboard page.

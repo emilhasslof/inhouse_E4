@@ -205,6 +205,17 @@ func (h *Handler) Receive(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[gsi] insert snapshot for match %s player %d: %v", p.Map.MatchID, player.ID, err)
 	}
 
+	if err := h.db.UpsertLiveMatchStat(r.Context(),
+		matchID, player.ID,
+		p.Map.ClockTime,
+		p.Player.Kills, p.Player.Deaths, p.Player.Assists,
+		p.Player.Gold, p.Player.GPM, p.Player.XPM,
+		p.Player.LastHits, p.Player.Denies,
+		p.Hero.Level, p.Hero.Name, p.Player.TeamName,
+	); err != nil {
+		log.Printf("[gsi] upsert live stat for match %s player %d: %v", p.Map.MatchID, player.ID, err)
+	}
+
 	if p.Map.GameState == postGameState {
 		// Persist the Captain's Mode draft if the payload carries pick/ban data.
 		// Team3 = radiant, Team2 = dire (Dota 2 internal team numbering).

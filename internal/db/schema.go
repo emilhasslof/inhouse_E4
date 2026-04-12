@@ -70,6 +70,26 @@ CREATE TABLE IF NOT EXISTS match_draft (
   UNIQUE(match_id, team_name, is_pick, slot)
 );
 
+CREATE TABLE IF NOT EXISTS live_match_stats (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  match_id    INTEGER NOT NULL REFERENCES matches(id),
+  player_id   INTEGER NOT NULL REFERENCES players(id),
+  clock_time  INTEGER NOT NULL DEFAULT 0,
+  kills       INTEGER NOT NULL DEFAULT 0,
+  deaths      INTEGER NOT NULL DEFAULT 0,
+  assists     INTEGER NOT NULL DEFAULT 0,
+  gold        INTEGER NOT NULL DEFAULT 0,
+  gpm         INTEGER NOT NULL DEFAULT 0,
+  xpm         INTEGER NOT NULL DEFAULT 0,
+  last_hits   INTEGER NOT NULL DEFAULT 0,
+  denies      INTEGER NOT NULL DEFAULT 0,
+  hero_name   TEXT    NOT NULL DEFAULT '',
+  hero_level  INTEGER NOT NULL DEFAULT 1,
+  team_name   TEXT    NOT NULL DEFAULT '',
+  updated_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+  UNIQUE(match_id, player_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_snapshots_match_player ON gsi_snapshots(match_id, player_id);
 CREATE INDEX IF NOT EXISTS idx_stats_match ON match_player_stats(match_id);
 CREATE INDEX IF NOT EXISTS idx_stats_player ON match_player_stats(player_id);

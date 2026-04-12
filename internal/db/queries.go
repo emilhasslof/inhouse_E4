@@ -227,15 +227,55 @@ func (db *DB) UpsertMatchPlayerStat(ctx context.Context, matchID, playerID int64
 	return err
 }
 
-// CompleteMatch marks a match as completed and records final scores, winner, and duration.
-func (db *DB) CompleteMatch(ctx context.Context, matchID int64, radiantScore, direScore int, winTeam string, durationSecs int) error {
+// UpsertLiveMatchStat writes or updates the live stats for one player in an
+// in-progress match. Only the latest snapshot per (match, player) is kept.
+func (db *DB) UpsertLiveMatchStat(ctx context.Context, matchID, playerID int64,
+	clockTime, kills, deaths, assists, gold, gpm, xpm, lastHits, denies, heroLevel int,
+	heroName, teamName string,
+) error {
 	_, err := db.conn.ExecContext(ctx, `
+		INSERT INTO live_match_stats
+		  (match_id, player_id, clock_time, kills, deaths, assists, gold, gpm, xpm,
+		   last_hits, denies, hero_name, hero_level, team_name, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
+		ON CONFLICT(match_id, player_id) DO UPDATE SET
+		  clock_time = excluded.clock_time,
+		  kills      = excluded.kills,
+		  deaths     = excluded.deaths,
+		  assists    = excluded.assists,
+		  gold       = excluded.gold,
+		  gpm        = excluded.gpm,
+		  xpm        = excluded.xpm,
+		  last_hits  = excluded.last_hits,
+		  denies     = excluded.denies,
+		  hero_name  = excluded.hero_name,
+		  hero_level = excluded.hero_level,
+		  team_name  = excluded.team_name,
+		  updated_at = excluded.updated_at`,
+		matchID, playerID, clockTime, kills, deaths, assists, gold, gpm, xpm,
+		lastHits, denies, heroName, heroLevel, teamName)
+	return err
+}
+
+// CompleteMatch marks a match as completed, records final scores, and clears live stats.
+func (db *DB) CompleteMatch(ctx context.Context, matchID int64, radiantScore, direScore int, winTeam string, durationSecs int) error {
+	tx, err := db.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `
 		UPDATE matches
 		SET state = 'completed', radiant_score = ?, dire_score = ?,
 		    win_team = ?, duration_secs = ?, ended_at = unixepoch()
 		WHERE id = ? AND state != 'completed'`,
-		radiantScore, direScore, winTeam, durationSecs, matchID)
-	return err
+		radiantScore, direScore, winTeam, durationSecs, matchID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM live_match_stats WHERE match_id = ?`, matchID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // DeleteMatch removes a match and all its associated rows (snapshots, player
@@ -260,6 +300,7 @@ func (db *DB) DeleteMatch(ctx context.Context, dotaMatchID string) error {
 	for _, stmt := range []string{
 		`DELETE FROM match_draft         WHERE match_id = ?`,
 		`DELETE FROM match_player_stats  WHERE match_id = ?`,
+		`DELETE FROM live_match_stats    WHERE match_id = ?`,
 		`DELETE FROM gsi_snapshots       WHERE match_id = ?`,
 	} {
 		if _, err := tx.ExecContext(ctx, stmt, id); err != nil {
@@ -296,6 +337,7 @@ func (db *DB) DeleteInProgressMatches(ctx context.Context) (int, error) {
 	for _, stmt := range []string{
 		`DELETE FROM match_draft        WHERE match_id IN (SELECT id FROM matches WHERE state = 'in_progress')`,
 		`DELETE FROM match_player_stats WHERE match_id IN (SELECT id FROM matches WHERE state = 'in_progress')`,
+		`DELETE FROM live_match_stats   WHERE match_id IN (SELECT id FROM matches WHERE state = 'in_progress')`,
 		`DELETE FROM gsi_snapshots      WHERE match_id IN (SELECT id FROM matches WHERE state = 'in_progress')`,
 		`DELETE FROM matches            WHERE state = 'in_progress'`,
 	} {
@@ -359,6 +401,42 @@ func (db *DB) GetMatchDetail(ctx context.Context, matchID int64) (*MatchDetailVi
 		return nil, err
 	}
 
+	view := &MatchDetailView{Match: m}
+
+	if m.State == "in_progress" {
+		rows, err := db.conn.QueryContext(ctx, `
+			SELECT p.display_name, lms.hero_name, lms.team_name,
+			       lms.kills, lms.deaths, lms.assists,
+			       lms.gpm, lms.xpm, lms.last_hits, lms.denies, lms.hero_level,
+			       lms.gold, lms.clock_time
+			FROM live_match_stats lms
+			JOIN players p ON p.id = lms.player_id
+			WHERE lms.match_id = ?
+			ORDER BY lms.team_name, lms.kills DESC`, matchID)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var row PlayerStatRow
+			if err := rows.Scan(
+				&row.DisplayName, &row.HeroName, &row.TeamName,
+				&row.Kills, &row.Deaths, &row.Assists,
+				&row.GPM, &row.XPM, &row.LastHits, &row.Denies, &row.FinalLevel,
+				&row.Gold, &row.ClockTime,
+			); err != nil {
+				return nil, err
+			}
+			if row.TeamName == "radiant" {
+				view.Radiant = append(view.Radiant, row)
+			} else {
+				view.Dire = append(view.Dire, row)
+			}
+		}
+		return view, rows.Err()
+	}
+
+	// Completed match — read from materialised end-of-game stats.
 	rows, err := db.conn.QueryContext(ctx, `
 		SELECT p.display_name, mps.hero_name, mps.team_name,
 		       mps.kills, mps.deaths, mps.assists,
@@ -371,8 +449,6 @@ func (db *DB) GetMatchDetail(ctx context.Context, matchID int64) (*MatchDetailVi
 		return nil, err
 	}
 	defer rows.Close()
-
-	view := &MatchDetailView{Match: m}
 	for rows.Next() {
 		var row PlayerStatRow
 		if err := rows.Scan(
