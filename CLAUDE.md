@@ -45,6 +45,8 @@ CORS is open (`*`) so the frontend can call from any origin.
 
 **Live URL:** `https://inhousee4-production.up.railway.app`
 
+**Staging URL:** `https://inhousee4-staging.up.railway.app` (or similar — confirm exact URL from Railway dashboard). Tracks the `staging` branch; auto-deploys on push to `staging`. Use this for testing before merging to `main`.
+
 **Frontend connection:** `API_BASE` in `frontend/src/lib/api.ts` — set to the origin only (no trailing `/api`). The fetch calls append `/api/...` themselves.
 
 **Key dependencies:**
@@ -97,7 +99,7 @@ Post-game detection: when `map.game_state == "DOTA_GAMERULES_STATE_POST_GAME"`, 
 
 ## Git Workflow
 
-**Work on `dev`.** Commit to `dev` during development. Merge `dev` → `main` when ready to deploy (triggers Railway). Direct commits to `main` only for urgent hotfixes when explicitly asked.
+**Work on `dev`.** Commit to `dev` during development. Merge `dev` → `staging` to test on the staging environment before promoting to production. Merge `staging` → `main` (or `dev` → `main`) when ready to deploy. Direct commits to `main` only for urgent hotfixes when explicitly asked.
 
 **Branch naming:**
 - `feature/short-description` — new functionality
@@ -128,20 +130,33 @@ To see the UI: run the frontend (`cd ../frontend && npm run dev`). The frontend 
 
 ## Deploying
 
-Hosted on Railway, auto-deploys on push to `main` via Railway's GitHub integration (not GitHub Actions — there are no workflow files).
+Hosted on Railway, auto-deploys via Railway's GitHub integration (not GitHub Actions — there are no workflow files).
+
+| Environment | Branch | URL |
+|---|---|---|
+| Production | `main` | `https://inhousee4-production.up.railway.app` |
+| Staging | `staging` | confirm exact URL in Railway dashboard |
 
 ```bash
-git push   # triggers a Railway build and deploy automatically
+# Deploy to staging (for testing)
+git push origin staging
+
+# Promote to production
+git checkout main && git merge staging && git push
 ```
 
 Railway project: `inhouse-e4` (emilhasslof's workspace)
-Live URL: `https://inhousee4-production.up.railway.app`
 
 **Environment variables on Railway:**
 - `APP_ENV=development` — seeds 10 players + 3 fake matches on boot (remove when going live with real players)
 - `DB_PATH=/data/inhouse.db` — set this when a persistent volume is attached
 
 **Persistent volume configured** — volume `inhouse_e4-volume` is mounted at `/data`. `DB_PATH=/data/inhouse.db` is set in Railway env. DB survives redeploys.
+
+**Simulating matches against staging:**
+```bash
+go run ./cmd/datagen -target <staging-url>
+```
 
 **Simulating matches against production:**
 ```bash
