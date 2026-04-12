@@ -238,6 +238,75 @@ func (db *DB) CompleteMatch(ctx context.Context, matchID int64, radiantScore, di
 	return err
 }
 
+// DeleteMatch removes a match and all its associated rows (snapshots, player
+// stats, draft data) atomically. A no-op if the match does not exist.
+// Used by the gate's abandon callback to clean up incomplete matches.
+func (db *DB) DeleteMatch(ctx context.Context, dotaMatchID string) error {
+	tx, err := db.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	var id int64
+	err = tx.QueryRowContext(ctx, `SELECT id FROM matches WHERE dota_match_id = ?`, dotaMatchID).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil // already gone
+	}
+	if err != nil {
+		return fmt.Errorf("lookup match %s: %w", dotaMatchID, err)
+	}
+
+	for _, stmt := range []string{
+		`DELETE FROM match_draft         WHERE match_id = ?`,
+		`DELETE FROM match_player_stats  WHERE match_id = ?`,
+		`DELETE FROM gsi_snapshots       WHERE match_id = ?`,
+	} {
+		if _, err := tx.ExecContext(ctx, stmt, id); err != nil {
+			return fmt.Errorf("delete child rows for match %d: %w", id, err)
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM matches WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("delete match %d: %w", id, err)
+	}
+	return tx.Commit()
+}
+
+// DeleteInProgressMatches removes every match that is still in state
+// 'in_progress', along with all associated rows. Returns the number of matches
+// deleted. Called at startup to discard matches that were never completed
+// because the server restarted while a game was running.
+func (db *DB) DeleteInProgressMatches(ctx context.Context) (int, error) {
+	tx, err := db.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	var count int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM matches WHERE state = 'in_progress'`).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count in-progress matches: %w", err)
+	}
+	if count == 0 {
+		return 0, nil
+	}
+
+	for _, stmt := range []string{
+		`DELETE FROM match_draft        WHERE match_id IN (SELECT id FROM matches WHERE state = 'in_progress')`,
+		`DELETE FROM match_player_stats WHERE match_id IN (SELECT id FROM matches WHERE state = 'in_progress')`,
+		`DELETE FROM gsi_snapshots      WHERE match_id IN (SELECT id FROM matches WHERE state = 'in_progress')`,
+		`DELETE FROM matches            WHERE state = 'in_progress'`,
+	} {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return 0, fmt.Errorf("cleanup in-progress matches: %w", err)
+		}
+	}
+
+	return count, tx.Commit()
+}
+
 // ListMatches returns all matches ordered by most recently started, including
 // comma-separated player name lists per team from match_player_stats.
 func (db *DB) ListMatches(ctx context.Context) ([]MatchSummary, error) {
