@@ -38,7 +38,7 @@ Player's Dota client → POST /gsi → Go HTTP server → SQLite (data/inhouse.d
 | GET | /api/stats/heroes | Hero pick/win counts |
 | GET | /api/stats/overview | League-wide aggregate stats |
 | GET | /api/registered-players | All registered players (display_name, steam_id) |
-| POST | /api/lobby/create | Create lobby + invite players — takes `{steam_ids: string[], game_mode?: "captains_mode"\|"all_pick"}` (default: `"captains_mode"`). Cheats always enabled. 400 if any ID unregistered. Match gate locks after 2 players confirm the same match ID. |
+| POST | /api/lobby/create | Create lobby + invite players — takes `{steam_ids: string[], game_mode?: "captains_mode"\|"all_pick"}` (default: `"captains_mode"`). Cheats disabled. 400 if any ID unregistered. Match gate locks after 2 players confirm the same match ID. |
 | POST | /api/lobby/reset | Hard-reset the bot (abandon lobby, kill connection, reconnect). 503 if bot not configured. |
 
 CORS is open (`*`) so the frontend can call from any origin.
@@ -168,7 +168,7 @@ VALUES ('76561197990491029', 'PlayerName', 'abc123...');
 
 - Match gate confirmation threshold is **1 player** (for solo testing; raise `confirmThreshold` in `internal/match/gate.go` for production).
 - `win_team` is captured from `map.win_team` in POST_GAME packets and stored in the `matches` table. All win/loss queries use `mps.team_name = m.win_team` — not kill score comparison.
-- Lobby cheats are always enabled (`AllowCheats: true`). Game mode defaults to Captain's Mode; pass `game_mode: "all_pick"` to override.
+- Lobby cheats are disabled (`AllowCheats: false`). Game mode defaults to Captain's Mode; pass `game_mode: "all_pick"` to override.
 - Register scripts (`register.sh` / `register.bat`) use the Steam persona name from `loginusers.vdf` — no manual name entry. Already-registered players still get the bot friend prompt.
 
 ## Schema Migrations

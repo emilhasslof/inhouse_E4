@@ -355,7 +355,7 @@ func (s *Service) CreateLobbyAndInvite(players []db.Player, gameMode string) {
 		GameMode:        &dotaGameMode,
 		Visibility:      &visibility,
 		ServerRegion:    proto.Uint32(3), // Europe West
-		AllowCheats:     proto.Bool(true),
+		AllowCheats:     proto.Bool(false),
 		AllowSpectating: proto.Bool(true),
 	}
 

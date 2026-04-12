@@ -26,7 +26,15 @@ if (-not (Test-Path $vdfPath)) {
     exit 1
 }
 
-$vdf      = Get-Content $vdfPath -Raw
+# Read VDF with explicit encoding handling (Steam writes UTF-16 LE on Windows)
+$rawBytes = [System.IO.File]::ReadAllBytes($vdfPath)
+if ($rawBytes.Length -ge 2 -and $rawBytes[0] -eq 0xFF -and $rawBytes[1] -eq 0xFE) {
+    $vdf = [System.Text.Encoding]::Unicode.GetString($rawBytes, 2, $rawBytes.Length - 2)
+} elseif ($rawBytes.Length -ge 3 -and $rawBytes[0] -eq 0xEF -and $rawBytes[1] -eq 0xBB -and $rawBytes[2] -eq 0xBF) {
+    $vdf = [System.Text.Encoding]::UTF8.GetString($rawBytes, 3, $rawBytes.Length - 3)
+} else {
+    $vdf = [System.Text.Encoding]::UTF8.GetString($rawBytes)
+}
 $accounts = @()
 $ids      = [regex]::Matches($vdf, '"(\d{17})"')      | ForEach-Object { $_.Groups[1].Value }
 $names    = [regex]::Matches($vdf, '"PersonaName"\s+"([^"]+)"') | ForEach-Object { $_.Groups[1].Value }
@@ -71,8 +79,9 @@ $apiBase = "https://inhousee4-production.up.railway.app"
 Write-Host ""
 Write-Host "Registering..." -ForegroundColor Yellow
 try {
-    $body     = @{ steam_id = $chosen.SteamID; display_name = $displayName } | ConvertTo-Json
-    $response = Invoke-RestMethod -Uri "$apiBase/api/register" -Method Post -Body $body -ContentType "application/json"
+    $body      = @{ steam_id = $chosen.SteamID; display_name = $displayName } | ConvertTo-Json
+    $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($body)
+    $response  = Invoke-RestMethod -Uri "$apiBase/api/register" -Method Post -Body $bodyBytes -ContentType "application/json"
     $token    = $response.token
 } catch {
     $status = $_.Exception.Response.StatusCode.value__
