@@ -19,7 +19,7 @@ Mark items done with `[x]` when complete, or remove them.
 
 - [x] Schema migration added for `win_team` column — `ALTER TABLE` runs on startup so existing DBs are upgraded without needing a full wipe.
 - [x] Win/loss determination now uses `win_team` from GSI POST_GAME packets instead of kill score comparison.
-- [x] Lobby cheats always enabled; `POST /api/lobby/create` accepts `game_mode: "captains_mode" | "all_pick"` (default: captains_mode).
+- [x] Lobby cheats disabled; `POST /api/lobby/create` accepts `game_mode: "captains_mode" | "all_pick"` (default: captains_mode).
 - [x] Match gate confirmation threshold set to 1 player (solo testing). Raise `confirmThreshold` in `internal/match/gate.go` before going live.
 - [x] Register scripts use Steam persona name automatically — no manual name entry, fixes Å/Ä/Ö encoding issues.
 - [x] Bot GC reconnect hardening — `DisconnectedEvent` now calls `connectWithRetry` (full retry loop) instead of a one-shot `Connect()`. `gcReady`/`gcAbort` channels are reset on each `LoggedOnEvent` so reconnects get a fresh GC session. `lobbyMu` is now held for the entire lobby lifetime (creation + `!start` wait) to prevent concurrent `LeaveCreateLobby` calls from multiple frontend POSTs. `!start` now also accepted via Steam direct message (independent of GC session state).
