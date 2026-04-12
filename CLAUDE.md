@@ -68,7 +68,7 @@ Post-game detection: when `map.game_state == "DOTA_GAMERULES_STATE_POST_GAME"`, 
 |---|---|
 | `players` | Registered players — display name + unique GSI auth token |
 | `matches` | One row per match — state, scores, duration |
-| `gsi_snapshots` | Raw 1-per-second stream per player — source for gold graphs, kill timelines, kill events |
+| `gsi_snapshots` | Raw 1-per-second archive per player — **not read by any API endpoint**. Kept as a source of truth for future features (gold graphs, kill timelines). New features should materialise derived data into a purpose-built table rather than querying snapshots directly at request time. |
 | `match_player_stats` | Materialised end-of-match K/D/A/GPM/XPM — what the web pages read |
 | `player_pair_killstreak` | **Planned** — current and all-time peak killstreak for each ordered (killer, victim) player pair, accumulated across matches |
 
