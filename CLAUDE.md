@@ -33,7 +33,7 @@ Player's Dota client → POST /gsi → Go HTTP server → SQLite (data/inhouse.d
 | POST | /gsi | GSI payload ingest from Dota clients |
 | POST | /api/register | Register a new player — takes `{steam_id, display_name}`, returns `{token}`. Open, no auth required. 409 if Steam ID already registered. |
 | GET | /api/matches | List matches with team player names |
-| GET | /api/matches/{id} | Match detail + scoreboard |
+| GET | /api/matches/{id} | Match detail + scoreboard. Returns live stats (incl. `gold`, `clock_time`) from `live_match_stats` when `state=="in_progress"`; final stats from `match_player_stats` when `state=="completed"`. |
 | GET | /api/players | Player leaderboard (wins/losses/streak/GPM) |
 | GET | /api/stats/heroes | Hero pick/win counts |
 | GET | /api/stats/overview | League-wide aggregate stats |
@@ -69,7 +69,8 @@ Post-game detection: when `map.game_state == "DOTA_GAMERULES_STATE_POST_GAME"`, 
 | `players` | Registered players — display name + unique GSI auth token |
 | `matches` | One row per match — state, scores, duration |
 | `gsi_snapshots` | Raw 1-per-second archive per player — **not read by any API endpoint**. Kept as a source of truth for future features (gold graphs, kill timelines). New features should materialise derived data into a purpose-built table rather than querying snapshots directly at request time. |
-| `match_player_stats` | Materialised end-of-match K/D/A/GPM/XPM — what the web pages read |
+| `live_match_stats` | One row per player in the active match — upserted on every GSI tick, deleted when the match completes. Max ~10 rows at any time. Read by `GET /api/matches/:id` when `state == "in_progress"`. Includes `gold` and `clock_time` which are absent from `match_player_stats`. |
+| `match_player_stats` | Materialised end-of-match K/D/A/GPM/XPM — what the web pages read for completed matches |
 | `player_pair_killstreak` | **Planned** — current and all-time peak killstreak for each ordered (killer, victim) player pair, accumulated across matches |
 
 ## File Map
