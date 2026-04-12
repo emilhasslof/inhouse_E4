@@ -12,7 +12,7 @@ Mark items done with `[x]` when complete, or remove them.
 - [ ] **Raise match confirmation threshold back to 2 (or more) before going live** — currently set to 1 for solo testing. See `internal/match/gate.go:confirmThreshold`.
 
 - [ ] **Live match view** — add a polling endpoint (e.g. `GET /api/match/live`) returning current state for an in-progress match: scoreline, player K/D/A/gold, hero names, and building status per team. Building visibility is limited to own-team buildings in GSI, so enemy tower/barracks state would need to be inferred by combining feeds from both teams. This is a different UX from finished match pages — needs a polling interval, live scoreboard, and no final duration yet. Design the minimum viable payload before touching the DB.
-- [ ] **Add a persistent Railway volume** before real matches begin — the database currently lives in ephemeral container storage and resets on every redeploy.
+- [x] **Persistent Railway volume** — volume `inhouse_e4-volume` mounted at `/data`, `DB_PATH=/data/inhouse.db` set in Railway env. DB survives redeploys.
 - [ ] **Gold-over-time graph** on the match detail page — the data is already in `gsi_snapshots`, just needs a query and a frontend chart.
 - [ ] **Kill timeline** — `player.kill_list` in GSI maps victim slot to kill count within the current streak. Kill events can be reconstructed by diffing consecutive snapshots in `gsi_snapshots`.
 - [ ] **Nemesis streaks** — for every ordered player pair (A, B), track how many consecutive times A has killed B without B killing A back. Streaks accumulate across matches and reset when the victim gets a kill back. Expose the current top streaks at `GET /api/stats/nemesis`. Requires kill event detection from snapshot deltas and a new `player_pair_killstreak` table storing current streak and all-time peak per pair.
@@ -22,7 +22,7 @@ Mark items done with `[x]` when complete, or remove them.
 - [x] Schema migration added for `win_team` column — `ALTER TABLE` runs on startup so existing DBs are upgraded without needing a full wipe.
 - [x] Win/loss determination now uses `win_team` from GSI POST_GAME packets instead of kill score comparison.
 - [x] Lobby cheats always enabled; `POST /api/lobby/create` accepts `game_mode: "captains_mode" | "all_pick"` (default: captains_mode).
-- [x] Match gate confirmation threshold lowered to 2 players.
+- [x] Match gate confirmation threshold set to 1 player (solo testing). Raise `confirmThreshold` in `internal/match/gate.go` before going live.
 - [x] Register scripts use Steam persona name automatically — no manual name entry, fixes Å/Ä/Ö encoding issues.
 - [x] Bot GC reconnect hardening — `DisconnectedEvent` now calls `connectWithRetry` (full retry loop) instead of a one-shot `Connect()`. `gcReady`/`gcAbort` channels are reset on each `LoggedOnEvent` so reconnects get a fresh GC session. `lobbyMu` is now held for the entire lobby lifetime (creation + `!start` wait) to prevent concurrent `LeaveCreateLobby` calls from multiple frontend POSTs. `!start` now also accepted via Steam direct message (independent of GC session state).
 - [x] Draft tracking — `match_draft` table + `GET /api/matches/{id}/draft`. Populated from POST_GAME GSI packets (Captain's Mode only — All Pick has no draft block). team3=radiant, team2=dire per Dota 2 internal numbering.

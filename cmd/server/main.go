@@ -9,6 +9,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -35,7 +36,26 @@ func main() {
 	}
 	defer database.Close()
 
+	// Discard any matches that were in-progress when the server last shut down.
+	// The gate starts closed on every boot, so those matches can never be
+	// completed — delete them now rather than leave them orphaned forever.
+	if n, err := database.DeleteInProgressMatches(context.Background()); err != nil {
+		log.Printf("[server] cleanup orphaned matches: %v", err)
+	} else if n > 0 {
+		log.Printf("[server] deleted %d orphaned in-progress match(es) from previous run", n)
+	}
+
 	gate := new(match.Gate)
+
+	// When the gate abandons a match (idle timeout, forced reset, etc.), delete
+	// it and all its rows from the database so no half-complete match lingers.
+	gate.SetOnAbandon(func(dotaMatchID string) {
+		if err := database.DeleteMatch(context.Background(), dotaMatchID); err != nil {
+			log.Printf("[gate] delete abandoned match %s: %v", dotaMatchID, err)
+		} else {
+			log.Printf("[gate] deleted abandoned match %s", dotaMatchID)
+		}
+	})
 
 	if appEnv == "development" {
 		log.Println("[server] APP_ENV=development — seeding players and dev match data")

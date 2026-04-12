@@ -141,7 +141,7 @@ Live URL: `https://inhousee4-production.up.railway.app`
 - `APP_ENV=development` — seeds 10 players + 3 fake matches on boot (remove when going live with real players)
 - `DB_PATH=/data/inhouse.db` — set this when a persistent volume is attached
 
-**No persistent volume yet** — DB lives in ephemeral container storage and resets on each deploy. Add a Railway volume mounted at `/data` before running real matches.
+**Persistent volume configured** — volume `inhouse_e4-volume` is mounted at `/data`. `DB_PATH=/data/inhouse.db` is set in Railway env. DB survives redeploys.
 
 **Simulating matches against production:**
 ```bash
@@ -166,7 +166,7 @@ VALUES ('76561197990491029', 'PlayerName', 'abc123...');
 
 ## GSI Data Notes
 
-- Match gate confirmation threshold is **2 players** (lowered from 3 for testing with small groups).
+- Match gate confirmation threshold is **1 player** (for solo testing; raise `confirmThreshold` in `internal/match/gate.go` for production).
 - `win_team` is captured from `map.win_team` in POST_GAME packets and stored in the `matches` table. All win/loss queries use `mps.team_name = m.win_team` — not kill score comparison.
 - Lobby cheats are always enabled (`AllowCheats: true`). Game mode defaults to Captain's Mode; pass `game_mode: "all_pick"` to override.
 - Register scripts (`register.sh` / `register.bat`) use the Steam persona name from `loginusers.vdf` — no manual name entry. Already-registered players still get the bot friend prompt.
@@ -206,6 +206,13 @@ VALUES ('76561197990491029', 'PlayerName', 'abc123...');
 - `go-dota2` emits `unknown shared object type id: 2013` warnings when it can't parse a GC welcome cache message. This prevents `GCConnectionStatus_HAVE_SESSION` from being dispatched reliably. Lobby creation still works (GC responds to `LeaveCreateLobby`), but Dota lobby chat events (`events.ChatMessage`) may not arrive.
 - **`!start` fallback:** also listen on `*steam.ChatMsgEvent` (Steam direct DM) so players can trigger lobby launch regardless of GC session state.
 - `lobbyMu` must stay held for the full lobby lifetime (creation + `waitForStart`). Releasing it after launch allows a rapid second POST to call `LeaveCreateLobby` concurrently, stomping the active lobby.
+
+### Match gate close logic
+- The gate has three states: **closed** → **open** (on `!start`) → **locked** (once `confirmThreshold` players confirm the same match ID) → **closed**.
+- **Open phase TTL** (4h): if the match never confirms, the gate self-closes. Checked in `Accept()` only — `IsOpen()` no longer checks TTL.
+- **Locked phase**: TTL is intentionally NOT applied. Instead, a 30-second idle timer (reset on every accepted packet) closes the gate if packets stop flowing. This prevents the gate from closing mid-game due to a stale TTL from a previous session.
+- **POST_GAME tracking**: the gate tracks `seenPlayers` (everyone who sent a packet while locked) and `postGamePlayers`. Once every seen player has sent a POST_GAME packet, the gate closes immediately without waiting for the idle timer. Call `gate.PostGame(steamID)` from the handler — do not call `gate.Close()` directly.
+- **Bug found (and fixed):** a TTL check that existed in both `IsOpen()` and `Accept()` caused the gate to lock to a match ID from an expired session, then immediately close on the next `IsOpen()` call. Root cause: `Accept()` did not check TTL, so it could lock even when expired; `IsOpen()` then detected expiry and closed the gate.
 
 ### GSI data quality notes
 - `gpm` and `xpm` are wildly inflated for the first ~10 seconds of `clock_time`. Always guard sampling with `clock_time > 10`.
