@@ -31,14 +31,14 @@ Player's Dota client → POST /gsi → Go HTTP server → SQLite (data/inhouse.d
 | GET | /healthz | Health check — returns `{"status":"ok"}` |
 | GET | /api | Endpoint spec — lists all routes and response shapes |
 | POST | /gsi | GSI payload ingest from Dota clients |
-| POST | /api/register | Register a new player — takes `{steam_id, display_name}`, returns `{token}`. Open, no auth required. 409 if Steam ID already registered. |
+| POST | /api/register | Register a new player — takes `{steam_id, display_name}`, returns `{display_name, steam_id}`. Open, no auth required. 409 if Steam ID already registered. |
 | GET | /api/matches | List matches with team player names |
 | GET | /api/matches/{id} | Match detail + scoreboard. Returns live stats (incl. `gold`, `clock_time`) from `live_match_stats` when `state=="in_progress"`; final stats from `match_player_stats` when `state=="completed"`. |
 | GET | /api/players | Player leaderboard (wins/losses/streak/GPM) |
 | GET | /api/stats/heroes | Hero pick/win counts |
 | GET | /api/stats/overview | League-wide aggregate stats |
 | GET | /api/registered-players | All registered players (display_name, steam_id) |
-| POST | /api/lobby/create | Create lobby + invite players — takes `{steam_ids: string[], game_mode?: "captains_mode"\|"all_pick"}` (default: `"captains_mode"`). Cheats disabled. 400 if any ID unregistered. Match gate locks after 2 players confirm the same match ID. |
+| POST | /api/lobby/create | Create lobby + invite players — takes `{steam_ids: string[], game_mode?: "captains_mode"\|"all_pick"}` (default: `"captains_mode"`). Cheats disabled. 400 if any ID unregistered. Match gate locks after `CONFIRM_THRESHOLD` players confirm the same match ID. |
 | POST | /api/lobby/reset | Hard-reset the bot (abandon lobby, kill connection, reconnect). 503 if bot not configured. |
 
 CORS is open (`*`) so the frontend can call from any origin.
@@ -151,6 +151,7 @@ Railway project: `inhouse-e4` (emilhasslof's workspace)
 **Environment variables on Railway:**
 - `APP_ENV=development` — seeds 10 players + 3 fake matches on boot (remove when going live with real players)
 - `DB_PATH=/data/inhouse.db` — set this when a persistent volume is attached
+- `CONFIRM_THRESHOLD=3` — players that must agree on a match ID before the gate locks (default: 3). Set to `1` on staging for solo testing.
 
 **Persistent volume configured** — volume `inhouse_e4-volume` is mounted at `/data`. `DB_PATH=/data/inhouse.db` is set in Railway env. DB survives redeploys.
 
@@ -182,10 +183,11 @@ VALUES ('76561197990491029', 'PlayerName', 'abc123...');
 
 ## GSI Data Notes
 
-- Match gate confirmation threshold is **1 player** (for solo testing; raise `confirmThreshold` in `internal/match/gate.go` for production).
+- Match gate confirmation threshold is controlled by the `CONFIRM_THRESHOLD` env var (default: 3). Set to `1` on staging for solo testing. The first packets arrive during `DOTA_GAMERULES_STATE_WAIT_FOR_PLAYERS_TO_LOAD`, well before the draft — so the gate locks quickly and draft packets are captured.
 - `win_team` is captured from `map.win_team` in POST_GAME packets and stored in the `matches` table. All win/loss queries use `mps.team_name = m.win_team` — not kill score comparison.
 - Lobby cheats are disabled (`AllowCheats: false`). Game mode defaults to Captain's Mode; pass `game_mode: "all_pick"` to override.
 - Register scripts (`register.sh` / `register.bat`) use the Steam persona name from `loginusers.vdf` — no manual name entry. Already-registered players still get the bot friend prompt.
+- GSI auth uses Steam ID from the player block — **no token check**. The `token` column still exists in the DB schema (SQLite can't drop columns) but is unused and set to `''` for new registrations.
 
 ## Schema Migrations
 
@@ -235,6 +237,7 @@ VALUES ('76561197990491029', 'PlayerName', 'abc123...');
 - `player.kill_list` maps victim slot → kill count within the current kill streak. It resets to empty when the player dies. Useful for detecting kill events by diffing successive snapshots.
 - Enemy buildings are not visible in any player's GSI feed (fog of war). Only own-team buildings appear.
 - `draft` block is only populated in Captain's Mode. It is `{}` in All Pick.
+- **Draft data is only present during `DOTA_GAMERULES_STATE_HERO_SELECTION`** — by POST_GAME the block is empty. `UpsertMatchDraft` must be called on every accepted packet, not just POST_GAME. Uses `INSERT OR IGNORE` so partial drafts accumulate correctly as picks/bans are revealed one at a time.
 
 ## Open Questions
 

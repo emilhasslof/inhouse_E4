@@ -9,7 +9,7 @@ Mark items done with `[x]` when complete, or remove them.
 
 ## Backlog
 
-- [ ] **Raise match confirmation threshold back to 2 (or more) before going live** — currently set to 1 for solo testing. See `internal/match/gate.go:confirmThreshold`.
+- [x] **Match confirmation threshold now controlled by `CONFIRM_THRESHOLD` env var** — defaults to 3. Set to `1` on staging for solo testing.
 
 - [x] **Live match view** — `GET /api/matches/:id` now returns live stats (K/D/A, gold, GPM, XPM, hero, clock_time) from `live_match_stats` when `match.state == "in_progress"`. Frontend can check `state` and poll. Building status not included (fog-of-war limitation).
 - [x] **Persistent Railway volume** — volume `inhouse_e4-volume` mounted at `/data`, `DB_PATH=/data/inhouse.db` set in Railway env. DB survives redeploys.
@@ -25,7 +25,7 @@ Mark items done with `[x]` when complete, or remove them.
 - [x] Match gate confirmation threshold set to 1 player (solo testing). Raise `confirmThreshold` in `internal/match/gate.go` before going live.
 - [x] Register scripts use Steam persona name automatically — no manual name entry, fixes Å/Ä/Ö encoding issues.
 - [x] Bot GC reconnect hardening — `DisconnectedEvent` now calls `connectWithRetry` (full retry loop) instead of a one-shot `Connect()`. `gcReady`/`gcAbort` channels are reset on each `LoggedOnEvent` so reconnects get a fresh GC session. `lobbyMu` is now held for the entire lobby lifetime (creation + `!start` wait) to prevent concurrent `LeaveCreateLobby` calls from multiple frontend POSTs. `!start` now also accepted via Steam direct message (independent of GC session state).
-- [x] Draft tracking — `match_draft` table + `GET /api/matches/{id}/draft`. Populated from POST_GAME GSI packets (Captain's Mode only — All Pick has no draft block). team3=radiant, team2=dire per Dota 2 internal numbering.
+- [x] Draft tracking — `match_draft` table + `GET /api/matches/{id}/draft`. Populated from HERO_SELECTION GSI packets (Captain's Mode only — All Pick has no draft block). team3=radiant, team2=dire per Dota 2 internal numbering. Fixed bug where draft was only written on POST_GAME (block is empty by then).
 - [x] Bot hard reset endpoint — `POST /api/lobby/reset` tears down the Steam connection and reconnects from scratch. Implemented via `bot.Manager` which owns the `Service` lifecycle.
 - [x] Lobby invites now use Steam IDs instead of display names — `POST /api/lobby/create` accepts `{ steam_ids: string[] }` and returns 400 with the unmatched IDs if any are not registered.
 - [x] Steam friend chat message sent to each player when a lobby is created, including the lobby password.

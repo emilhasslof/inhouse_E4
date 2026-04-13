@@ -210,33 +210,34 @@ func (h *Handler) Receive(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[gsi] upsert live stat for match %s player %d: %v", p.Map.MatchID, player.ID, err)
 	}
 
-	if p.Map.GameState == postGameState {
-		// Persist the Captain's Mode draft if the payload carries pick/ban data.
-		// Team3 = radiant, Team2 = dire (Dota 2 internal team numbering).
-		// INSERT OR IGNORE means only the first POST_GAME packet per slot wins,
-		// which is fine — the draft is immutable by this point.
-		radiant, dire := p.Draft.Team3, p.Draft.Team2
-		if picks := radiant.picks(); len(picks) > 0 {
-			if err := h.db.UpsertMatchDraft(r.Context(), matchID, "radiant", true, picks); err != nil {
-				log.Printf("[gsi] upsert radiant picks: %v", err)
-			}
+	// Persist Captain's Mode draft data whenever the payload carries it.
+	// Draft picks/bans are only present during HERO_SELECTION — by POST_GAME the
+	// block is empty. INSERT OR IGNORE means later packets never overwrite earlier
+	// ones, so partial drafts accumulate correctly as picks/bans are revealed.
+	// Team3 = radiant, Team2 = dire (Dota 2 internal team numbering).
+	radiant, dire := p.Draft.Team3, p.Draft.Team2
+	if picks := radiant.picks(); len(picks) > 0 {
+		if err := h.db.UpsertMatchDraft(r.Context(), matchID, "radiant", true, picks); err != nil {
+			log.Printf("[gsi] upsert radiant picks: %v", err)
 		}
-		if bans := radiant.bans(); len(bans) > 0 {
-			if err := h.db.UpsertMatchDraft(r.Context(), matchID, "radiant", false, bans); err != nil {
-				log.Printf("[gsi] upsert radiant bans: %v", err)
-			}
+	}
+	if bans := radiant.bans(); len(bans) > 0 {
+		if err := h.db.UpsertMatchDraft(r.Context(), matchID, "radiant", false, bans); err != nil {
+			log.Printf("[gsi] upsert radiant bans: %v", err)
 		}
-		if picks := dire.picks(); len(picks) > 0 {
-			if err := h.db.UpsertMatchDraft(r.Context(), matchID, "dire", true, picks); err != nil {
-				log.Printf("[gsi] upsert dire picks: %v", err)
-			}
+	}
+	if picks := dire.picks(); len(picks) > 0 {
+		if err := h.db.UpsertMatchDraft(r.Context(), matchID, "dire", true, picks); err != nil {
+			log.Printf("[gsi] upsert dire picks: %v", err)
 		}
-		if bans := dire.bans(); len(bans) > 0 {
-			if err := h.db.UpsertMatchDraft(r.Context(), matchID, "dire", false, bans); err != nil {
-				log.Printf("[gsi] upsert dire bans: %v", err)
-			}
+	}
+	if bans := dire.bans(); len(bans) > 0 {
+		if err := h.db.UpsertMatchDraft(r.Context(), matchID, "dire", false, bans); err != nil {
+			log.Printf("[gsi] upsert dire bans: %v", err)
 		}
+	}
 
+	if p.Map.GameState == postGameState {
 		if err := h.db.UpsertMatchPlayerStat(r.Context(),
 			matchID, player.ID,
 			p.Hero.Name, p.Player.TeamName,
