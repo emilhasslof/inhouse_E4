@@ -2,30 +2,21 @@ package db
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
 )
 
-// RegisterPlayer inserts a new player with a randomly generated token.
-// Returns an error if the steam_id is already registered.
+// RegisterPlayer inserts a new player. Returns an error if the steam_id is already registered.
 func (db *DB) RegisterPlayer(ctx context.Context, steamID, displayName string) (*Player, error) {
-	raw := make([]byte, 16)
-	if _, err := rand.Read(raw); err != nil {
-		return nil, fmt.Errorf("generate token: %w", err)
-	}
-	token := hex.EncodeToString(raw)
-
 	_, err := db.conn.ExecContext(ctx,
-		`INSERT INTO players (steam_id, display_name, token) VALUES (?, ?, ?)`,
-		steamID, displayName, token)
+		`INSERT INTO players (steam_id, display_name, token) VALUES (?, ?, '')`,
+		steamID, displayName)
 	if err != nil {
 		return nil, fmt.Errorf("register player: %w", err)
 	}
-	return &Player{SteamID: steamID, DisplayName: displayName, Token: token}, nil
+	return &Player{SteamID: steamID, DisplayName: displayName}, nil
 }
 
 // PlayersBySteamIDs returns all registered players whose steam_id is in the
@@ -42,7 +33,7 @@ func (db *DB) PlayersBySteamIDs(ctx context.Context, steamIDs []string) ([]Playe
 		args[i] = id
 	}
 	rows, err := db.conn.QueryContext(ctx,
-		`SELECT id, steam_id, display_name, token FROM players WHERE steam_id IN (`+placeholders+`)`,
+		`SELECT id, steam_id, display_name FROM players WHERE steam_id IN (`+placeholders+`)`,
 		args...)
 	if err != nil {
 		return nil, err
@@ -51,7 +42,7 @@ func (db *DB) PlayersBySteamIDs(ctx context.Context, steamIDs []string) ([]Playe
 	var players []Player
 	for rows.Next() {
 		var p Player
-		if err := rows.Scan(&p.ID, &p.SteamID, &p.DisplayName, &p.Token); err != nil {
+		if err := rows.Scan(&p.ID, &p.SteamID, &p.DisplayName); err != nil {
 			return nil, err
 		}
 		players = append(players, p)
@@ -128,7 +119,7 @@ func (db *DB) GetMatchDraft(ctx context.Context, matchID int64) (*MatchDraftView
 // ListRegisteredPlayers returns all players with their steam IDs and display names.
 func (db *DB) ListRegisteredPlayers(ctx context.Context) ([]Player, error) {
 	rows, err := db.conn.QueryContext(ctx,
-		`SELECT id, steam_id, display_name, token FROM players ORDER BY display_name`)
+		`SELECT id, steam_id, display_name FROM players ORDER BY display_name`)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +127,7 @@ func (db *DB) ListRegisteredPlayers(ctx context.Context) ([]Player, error) {
 	var players []Player
 	for rows.Next() {
 		var p Player
-		if err := rows.Scan(&p.ID, &p.SteamID, &p.DisplayName, &p.Token); err != nil {
+		if err := rows.Scan(&p.ID, &p.SteamID, &p.DisplayName); err != nil {
 			return nil, err
 		}
 		players = append(players, p)
@@ -144,26 +135,13 @@ func (db *DB) ListRegisteredPlayers(ctx context.Context) ([]Player, error) {
 	return players, rows.Err()
 }
 
-// PlayerByToken returns the player with the given GSI auth token.
-// Returns an error if not found.
-func (db *DB) PlayerByToken(ctx context.Context, token string) (*Player, error) {
-	row := db.conn.QueryRowContext(ctx,
-		`SELECT id, steam_id, display_name, token FROM players WHERE token = ?`, token)
-	p := &Player{}
-	err := row.Scan(&p.ID, &p.SteamID, &p.DisplayName, &p.Token)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("unknown token")
-	}
-	return p, err
-}
-
 // PlayerBySteamID returns the player with the given Steam ID.
 // Returns an error if not found.
 func (db *DB) PlayerBySteamID(ctx context.Context, steamID string) (*Player, error) {
 	row := db.conn.QueryRowContext(ctx,
-		`SELECT id, steam_id, display_name, token FROM players WHERE steam_id = ?`, steamID)
+		`SELECT id, steam_id, display_name FROM players WHERE steam_id = ?`, steamID)
 	p := &Player{}
-	err := row.Scan(&p.ID, &p.SteamID, &p.DisplayName, &p.Token)
+	err := row.Scan(&p.ID, &p.SteamID, &p.DisplayName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("unknown steam_id")
 	}

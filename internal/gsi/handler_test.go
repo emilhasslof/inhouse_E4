@@ -21,7 +21,7 @@ import (
 // openGate returns a match gate that is already open, for use in tests that
 // exercise GSI processing directly without going through the bot flow.
 func openGate() *match.Gate {
-	g := new(match.Gate)
+	g := match.New(1)
 	g.Open()
 	return g
 }
@@ -150,11 +150,17 @@ func TestReceive_InProgress(t *testing.T) {
 	require.Len(t, matches, 1)
 	assert.Equal(t, "in_progress", matches[0].State)
 
-	// No player stats materialised for in-progress match
+	// Live stats are populated from live_match_stats for in-progress matches.
+	// confirmMatch sends r1/r2/r3 with no team_name (empty string → Dire bucket).
+	// The subsequent inProgressPayload from r1 upserts Spinelli into Radiant.
 	detail, err := d.GetMatchDetail(context.Background(), matches[0].ID)
 	require.NoError(t, err)
-	assert.Empty(t, detail.Radiant)
-	assert.Empty(t, detail.Dire)
+	require.Len(t, detail.Radiant, 1)
+	assert.Equal(t, "Spinelli", detail.Radiant[0].DisplayName)
+	assert.Equal(t, 2, detail.Radiant[0].Kills)
+	assert.Equal(t, "npc_dota_hero_anti_mage", detail.Radiant[0].HeroName)
+	assert.Equal(t, 120, detail.Radiant[0].ClockTime)
+	assert.Len(t, detail.Dire, 2) // Sku + Jockwe Lamotte from confirmMatch (no team_name)
 }
 
 func TestReceive_PostGame(t *testing.T) {

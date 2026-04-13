@@ -23,7 +23,7 @@ import (
 
 func newTestServer(t *testing.T, d *db.DB) *httptest.Server {
 	t.Helper()
-	gate := new(match.Gate)
+	gate := match.New(1)
 	srv := httptest.NewServer(web.NewRouter(gsi.New(d, gate), web.New(d, nil)))
 	t.Cleanup(srv.Close)
 	return srv
@@ -106,7 +106,7 @@ func TestPlayersHandler_StreakPopulated(t *testing.T) {
 	require.NoError(t, d.Seed())
 	ctx := context.Background()
 
-	p, err := d.PlayerByToken(ctx, "datagen-radiant-1")
+	p, err := d.PlayerBySteamID(ctx, "datagen-steam-r1")
 	require.NoError(t, err)
 
 	for i := 0; i < 2; i++ {

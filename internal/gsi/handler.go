@@ -13,16 +13,10 @@ import (
 // Payload mirrors the JSON structure that Dota 2 sends via GSI.
 // Fields not needed for the MVP are omitted.
 type Payload struct {
-	Auth   AuthBlock   `json:"auth"`
 	Map    MapBlock    `json:"map"`
 	Player PlayerBlock `json:"player"`
 	Hero   HeroBlock   `json:"hero"`
 	Draft  DraftBlock  `json:"draft"`
-}
-
-// AuthBlock carries the player's pre-shared auth token.
-type AuthBlock struct {
-	Token string `json:"token"`
 }
 
 // MapBlock carries match-level state.

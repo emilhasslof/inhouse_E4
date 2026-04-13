@@ -5,7 +5,6 @@ type Player struct {
 	ID          int64
 	SteamID     string
 	DisplayName string
-	Token       string
 }
 
 // Match represents a single Dota 2 match recorded via GSI.

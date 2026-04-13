@@ -239,7 +239,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "player already registered"})
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]string{"token": player.Token})
+	writeJSON(w, http.StatusCreated, map[string]string{"display_name": player.DisplayName, "steam_id": player.SteamID})
 }
 
 // LeagueOverview handles GET /api/stats/overview

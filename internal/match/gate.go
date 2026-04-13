@@ -8,10 +8,6 @@ import (
 )
 
 const (
-	// confirmThreshold is the number of players that must report the same match
-	// ID before the gate locks. Set to 1 for solo testing; raise for production.
-	confirmThreshold = 1
-
 	// openTTL is the maximum time the gate will wait in the confirmation phase
 	// before giving up. Acts as a last resort if the match never starts.
 	openTTL = 4 * time.Hour
@@ -25,13 +21,14 @@ const (
 // Gate controls GSI ingest through three states:
 //
 //	closed → open   (bot calls Open when !start is received)
-//	open   → locked (confirmThreshold players send the same match ID)
+//	open   → locked (threshold players send the same match ID)
 //	locked → closed (all seen players report POST_GAME, or idle for 30s)
 //
 // Before the gate is locked, packets are not written to the database.
 // Once locked, only packets for the confirmed match ID are accepted.
 type Gate struct {
-	mu sync.Mutex
+	mu        sync.Mutex
+	threshold int
 
 	open      bool
 	expiresAt time.Time // deadline for the confirmation (open) phase only
@@ -49,6 +46,15 @@ type Gate struct {
 	// while still locked. The dota match ID string is passed so the caller can
 	// delete the incomplete match from the database.
 	onAbandon func(dotaMatchID string)
+}
+
+// New creates a Gate with the given confirmation threshold — the number of
+// unique players that must report the same match ID before the gate locks.
+func New(threshold int) *Gate {
+	if threshold < 1 {
+		threshold = 1
+	}
+	return &Gate{threshold: threshold}
 }
 
 // SetOnAbandon registers a callback that is called (in a goroutine) whenever a
@@ -83,7 +89,7 @@ func (g *Gate) Open() {
 	g.candidates = make(map[string]map[string]struct{})
 	g.seenPlayers = nil
 	g.postGamePlayers = nil
-	log.Printf("[gate] open — waiting for %d player(s) to confirm match ID", confirmThreshold)
+	log.Printf("[gate] open — waiting for %d player(s) to confirm match ID", g.threshold)
 }
 
 // Close marks the gate as closed. Used by the reset handler to force-close.
@@ -169,7 +175,7 @@ func (g *Gate) State() string {
 //   - Locked: accepts only packets for the confirmed match ID, tracks the player,
 //     and resets the idle timer.
 //   - Open/unconfirmed: records the player's vote. Returns false until
-//     confirmThreshold unique players agree on the same match ID, then locks.
+//     g.threshold unique players agree on the same match ID, then locks.
 //   - Closed, or confirmation phase past TTL: always false.
 func (g *Gate) Accept(matchID, playerSteamID string) bool {
 	g.mu.Lock()
@@ -203,9 +209,9 @@ func (g *Gate) Accept(matchID, playerSteamID string) bool {
 	}
 	g.candidates[matchID][playerSteamID] = struct{}{}
 	count := len(g.candidates[matchID])
-	log.Printf("[gate] match %s seen by %d/%d players", matchID, count, confirmThreshold)
+	log.Printf("[gate] match %s seen by %d/%d players", matchID, count, g.threshold)
 
-	if count >= confirmThreshold {
+	if count >= g.threshold {
 		g.lockedMatchID = matchID
 		g.candidates = nil
 		g.seenPlayers = map[string]struct{}{playerSteamID: {}}

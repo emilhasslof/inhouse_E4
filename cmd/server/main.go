@@ -2,9 +2,10 @@
 //
 // Environment variables:
 //
-//	DB_PATH   path to the SQLite database file (default: inhouse.db)
-//	PORT      HTTP listen port (default: 8080)
-//	APP_ENV   set to "development" to seed datagen players on startup
+//	DB_PATH            path to the SQLite database file (default: inhouse.db)
+//	PORT               HTTP listen port (default: 8080)
+//	APP_ENV            set to "development" to seed datagen players on startup
+//	CONFIRM_THRESHOLD  players that must agree on a match ID before the gate locks (default: 3)
 package main
 
 import (
@@ -14,6 +15,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/emilh/inhouse-e4/internal/bot"
@@ -29,6 +31,7 @@ func main() {
 	dbPath := getEnvOr("DB_PATH", "data/inhouse.db")
 	port := getEnvOr("PORT", "8080")
 	appEnv := getEnvOr("APP_ENV", "production")
+	confirmThreshold := getEnvInt("CONFIRM_THRESHOLD", 3)
 
 	database, err := db.Open(dbPath)
 	if err != nil {
@@ -45,7 +48,8 @@ func main() {
 		log.Printf("[server] deleted %d orphaned in-progress match(es) from previous run", n)
 	}
 
-	gate := new(match.Gate)
+	gate := match.New(confirmThreshold)
+	log.Printf("[server] match confirm threshold: %d", confirmThreshold)
 
 	// When the gate abandons a match (idle timeout, forced reset, etc.), delete
 	// it and all its rows from the database so no half-complete match lingers.
@@ -117,6 +121,16 @@ func loadEnv(path string) {
 func getEnvOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+func getEnvInt(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
+			return n
+		}
+		log.Printf("[server] invalid %s=%q, using default %d", key, v, fallback)
 	}
 	return fallback
 }
