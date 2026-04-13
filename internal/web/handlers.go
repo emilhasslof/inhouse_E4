@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -326,13 +328,12 @@ func (h *Handler) MatchDraft(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, draft)
 }
 
-// ResetLobby handles POST /api/lobby/reset — abandons the current lobby and
-// cancels any pending !start waiter.
+// ResetLobby handles POST /api/lobby/reset — restarts the entire process.
+// Railway detects the exit and brings the container back up automatically.
 func (h *Handler) ResetLobby(w http.ResponseWriter, r *http.Request) {
-	if h.bot == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "bot not configured"})
-		return
-	}
-	h.bot.Reset()
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	go func() {
+		time.Sleep(100 * time.Millisecond) // let the response flush
+		os.Exit(0)
+	}()
 }
