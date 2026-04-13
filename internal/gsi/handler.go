@@ -257,7 +257,7 @@ func (h *Handler) Receive(w http.ResponseWriter, r *http.Request) {
 			log.Printf("[gsi] upsert match_player_stat: %v", err)
 		}
 		if err := h.db.CompleteMatch(r.Context(), matchID,
-			p.Map.RadiantScore, p.Map.DireScore, p.Map.WinTeam, p.Map.GameTime); err != nil {
+			p.Map.RadiantScore, p.Map.DireScore, p.Map.WinTeam, p.Map.ClockTime); err != nil {
 			log.Printf("[gsi] complete match %d: %v", matchID, err)
 		}
 		h.gate.PostGame(player.SteamID)
