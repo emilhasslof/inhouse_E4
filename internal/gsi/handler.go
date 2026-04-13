@@ -80,6 +80,15 @@ type DraftTeam struct {
 	Ban6     string `json:"ban6_class"`
 }
 
+// heroName converts a draft class name (e.g. "meepo") to the full GSI hero
+// name format (e.g. "npc_dota_hero_meepo") used everywhere else in the system.
+func heroName(class string) string {
+	if class == "" {
+		return ""
+	}
+	return "npc_dota_hero_" + class
+}
+
 // picks returns the non-zero pick entries in slot order.
 func (t DraftTeam) picks() []db.DraftEntry {
 	raw := []struct {
@@ -92,7 +101,7 @@ func (t DraftTeam) picks() []db.DraftEntry {
 	var out []db.DraftEntry
 	for i, p := range raw {
 		if p.id != 0 {
-			out = append(out, db.DraftEntry{Slot: i, HeroID: p.id, HeroName: p.name})
+			out = append(out, db.DraftEntry{Slot: i, HeroID: p.id, HeroName: heroName(p.name)})
 		}
 	}
 	return out
@@ -110,7 +119,7 @@ func (t DraftTeam) bans() []db.DraftEntry {
 	var out []db.DraftEntry
 	for i, b := range raw {
 		if b.id != 0 {
-			out = append(out, db.DraftEntry{Slot: i, HeroID: b.id, HeroName: b.name})
+			out = append(out, db.DraftEntry{Slot: i, HeroID: b.id, HeroName: heroName(b.name)})
 		}
 	}
 	return out
