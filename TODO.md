@@ -7,13 +7,16 @@ Mark items done with `[x]` when complete, or remove them.
 
 ## Up next
 
+- [ ] **Item builds** — capture final item builds per player from POST_GAME packets. GSI provides `items` block with `slot0`–`slot8` (inventory), `stash0`–`stash5`, `teleport0`, `neutral0`. Needs a new table, slot parsing, and a new API endpoint (e.g. `GET /api/matches/{id}/items`).
+
 ## Backlog
 
 - [x] **Match confirmation threshold now controlled by `CONFIRM_THRESHOLD` env var** — defaults to 3. Set to `1` on staging for solo testing.
 
 - [x] **Live match view** — `GET /api/matches/:id` now returns live stats (K/D/A, gold, GPM, XPM, hero, clock_time) from `live_match_stats` when `match.state == "in_progress"`. Frontend can check `state` and poll. Building status not included (fog-of-war limitation).
 - [x] **Persistent Railway volume** — volume `inhouse_e4-volume` mounted at `/data`, `DB_PATH=/data/inhouse.db` set in Railway env. DB survives redeploys.
-- [ ] **Gold-over-time graph** on the match detail page — the data is already in `gsi_snapshots`, just needs a query and a frontend chart.
+- [ ] **Gold/XP over time** — `gsi_snapshots` already has per-second gold and XPM for every player. Add `GET /api/matches/{id}/timeline` returning time-series data per player. Frontend can render it as a graph on the match detail page.
+- [ ] **Match history per player** — `GET /api/players/{id}/matches` returning each match they played: hero, team, K/D/A, GPM, win/loss. Needed for a player profile page.
 - [ ] **Kill timeline** — `player.kill_list` in GSI maps victim slot to kill count within the current streak. Kill events can be reconstructed by diffing consecutive snapshots in `gsi_snapshots`.
 - [ ] **Nemesis streaks** — for every ordered player pair (A, B), track how many consecutive times A has killed B without B killing A back. Streaks accumulate across matches and reset when the victim gets a kill back. Expose the current top streaks at `GET /api/stats/nemesis`. Requires kill event detection from snapshot deltas and a new `player_pair_killstreak` table storing current streak and all-time peak per pair.
 
