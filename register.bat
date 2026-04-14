@@ -94,7 +94,7 @@ try {
     }
 }
 
-# Write GSI config (always — covers fresh registration and already-registered players)
+# Write GSI config (always - covers fresh registration and already-registered players)
 $dotaGsiDir = Join-Path $steamPath "steamapps\common\dota 2 beta\game\dota\cfg\gamestate_integration"
 if (-not (Test-Path $dotaGsiDir)) {
     New-Item -ItemType Directory -Path $dotaGsiDir | Out-Null
