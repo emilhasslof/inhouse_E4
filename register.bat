@@ -86,8 +86,7 @@ try {
 } catch {
     $status = $_.Exception.Response.StatusCode.value__
     if ($status -eq 409) {
-        Write-Host "You are already registered! No need to run this again." -ForegroundColor Yellow
-        $alreadyRegistered = $true
+        Write-Host "Already registered — updating GSI config..." -ForegroundColor Yellow
     } else {
         Write-Host "ERROR: Registration failed ($($_.Exception.Message))" -ForegroundColor Red
         Read-Host "Press Enter to exit"
@@ -95,14 +94,13 @@ try {
     }
 }
 
-if (-not $alreadyRegistered) {
-    # Write GSI config
-    $dotaGsiDir = Join-Path $steamPath "steamapps\common\dota 2 beta\game\dota\cfg\gamestate_integration"
-    if (-not (Test-Path $dotaGsiDir)) {
-        New-Item -ItemType Directory -Path $dotaGsiDir | Out-Null
-    }
+# Write GSI config (always — covers fresh registration and already-registered players)
+$dotaGsiDir = Join-Path $steamPath "steamapps\common\dota 2 beta\game\dota\cfg\gamestate_integration"
+if (-not (Test-Path $dotaGsiDir)) {
+    New-Item -ItemType Directory -Path $dotaGsiDir | Out-Null
+}
 
-    $gsiConfig = @"
+$gsiConfig = @"
 "inhouse"
 {
     "uri"        "https://inhousee4-production.up.railway.app/gsi"
@@ -112,7 +110,7 @@ if (-not $alreadyRegistered) {
     "heartbeat"  "30.0"
     "auth"
     {
-        "token"  "$token"
+        "token"  "$($chosen.SteamID)"
     }
     "data"
     {
@@ -123,14 +121,13 @@ if (-not $alreadyRegistered) {
 }
 "@
 
-    $gsiPath = Join-Path $dotaGsiDir "gamestate_integration_inhouse.cfg"
-    Set-Content -Path $gsiPath -Value $gsiConfig -Encoding UTF8
+$gsiPath = Join-Path $dotaGsiDir "gamestate_integration_inhouse.cfg"
+Set-Content -Path $gsiPath -Value $gsiConfig -Encoding UTF8
 
-    Write-Host ""
-    Write-Host "All done! You are registered." -ForegroundColor Green
-    Write-Host "GSI config written to: $gsiPath"
-    Write-Host "Launch Dota 2 and your stats will be tracked automatically."
-}
+Write-Host ""
+Write-Host "All done! You are registered." -ForegroundColor Green
+Write-Host "GSI config written to: $gsiPath"
+Write-Host "Launch Dota 2 and your stats will be tracked automatically."
 
 Write-Host ""
 Write-Host "--------------------------------------------------------------" -ForegroundColor DarkGray
