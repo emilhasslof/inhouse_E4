@@ -117,6 +117,7 @@ $gsiConfig = @"
         "map"    "1"
         "player" "1"
         "hero"   "1"
+        "draft"  "1"
     }
 }
 "@
