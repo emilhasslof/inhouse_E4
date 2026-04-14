@@ -86,7 +86,7 @@ try {
 } catch {
     $status = $_.Exception.Response.StatusCode.value__
     if ($status -eq 409) {
-        Write-Host "Already registered — updating GSI config..." -ForegroundColor Yellow
+        Write-Host "Already registered - updating GSI config..." -ForegroundColor Yellow
     } else {
         Write-Host "ERROR: Registration failed ($($_.Exception.Message))" -ForegroundColor Red
         Read-Host "Press Enter to exit"
