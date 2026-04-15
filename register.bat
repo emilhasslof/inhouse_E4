@@ -36,8 +36,8 @@ if ($rawBytes.Length -ge 2 -and $rawBytes[0] -eq 0xFF -and $rawBytes[1] -eq 0xFE
     $vdf = [System.Text.Encoding]::UTF8.GetString($rawBytes)
 }
 $accounts = @()
-$ids      = [regex]::Matches($vdf, '"(\d{17})"')      | ForEach-Object { $_.Groups[1].Value }
-$names    = [regex]::Matches($vdf, '"PersonaName"\s+"([^"]+)"') | ForEach-Object { $_.Groups[1].Value }
+$ids      = @([regex]::Matches($vdf, '"(\d{17})"')      | ForEach-Object { $_.Groups[1].Value })
+$names    = @([regex]::Matches($vdf, '"PersonaName"\s+"([^"]+)"') | ForEach-Object { $_.Groups[1].Value })
 
 for ($i = 0; $i -lt $ids.Count; $i++) {
     $accounts += [PSCustomObject]@{
