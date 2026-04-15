@@ -234,6 +234,14 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "steam_id and display_name are required"})
 		return
 	}
+	if len(body.DisplayName) < 2 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "display_name must be at least 2 characters"})
+		return
+	}
+	if len(body.SteamID) < 2 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "steam_id must be at least 2 characters"})
+		return
+	}
 
 	player, err := h.db.RegisterPlayer(r.Context(), body.SteamID, body.DisplayName)
 	if err != nil {

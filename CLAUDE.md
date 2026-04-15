@@ -167,13 +167,15 @@ go run ./cmd/datagen -target https://inhousee4-production.up.railway.app
 
 ## Adding Real Players
 
-Players self-register via `register.bat` (lives at the repo root, outside the backend folder — not deployed). The script:
+Players self-register via `register.bat` (lives at the repo root inside the backend folder). The script:
 1. Reads the player's Steam ID from `loginusers.vdf` automatically
-2. Prompts for a display name
-3. POSTs to `POST /api/register` — backend generates a random token and inserts the player row
-4. Writes the GSI config file to the correct Dota install folder
+2. POSTs to `POST /api/register` — backend generates a random token and inserts the player row
+3. Writes the GSI config file to the correct Dota install folder
+4. On 409 (already registered), still writes/overwrites the GSI config so the file stays correct
 
-Registration is open — no admin secret required. If a Steam ID is already registered, the endpoint returns 409.
+Registration is open — no admin secret required. If a Steam ID is already registered, the endpoint returns 409 but the GSI config is written regardless.
+
+For manual registration (e.g. from Linux), use `scripts/register_player.sh` — prompts for name and Steam ID, curls `/api/register`.
 
 Manual fallback (if needed):
 ```sql
@@ -184,10 +186,11 @@ VALUES ('76561197990491029', 'PlayerName', 'abc123...');
 ## GSI Data Notes
 
 - Match gate confirmation threshold is controlled by the `CONFIRM_THRESHOLD` env var (default: 3). Set to `1` on staging for solo testing. The first packets arrive during `DOTA_GAMERULES_STATE_WAIT_FOR_PLAYERS_TO_LOAD`, well before the draft — so the gate locks quickly and draft packets are captured.
+- The GSI config written by `register.bat` must include `"draft" "1"` in the `data` block, otherwise Dota never sends the draft block and `match_draft` stays empty. All existing players need to re-run `register.bat` to pick up this fix.
 - `win_team` is captured from `map.win_team` in POST_GAME packets and stored in the `matches` table. All win/loss queries use `mps.team_name = m.win_team` — not kill score comparison.
 - Lobby cheats are disabled (`AllowCheats: false`). Game mode defaults to Captain's Mode; pass `game_mode: "all_pick"` to override.
 - Register scripts (`register.sh` / `register.bat`) use the Steam persona name from `loginusers.vdf` — no manual name entry. Already-registered players still get the bot friend prompt.
-- GSI auth uses Steam ID from the player block — **no token check**. The `token` column still exists in the DB schema (SQLite can't drop columns) but is unused and set to `''` for new registrations.
+- GSI auth uses Steam ID from the player block — **no token check**. The `token` column still exists in the DB schema (SQLite can't drop columns easily due to the UNIQUE constraint) but is functionally unused. `RegisterPlayer` generates a random 16-byte hex token to satisfy the UNIQUE constraint — it is never read back.
 
 ## Schema Migrations
 
