@@ -15,7 +15,9 @@ const (
 	// idleTimeout is how long the gate stays locked with no incoming packets
 	// before closing. Handles the case where players stop sending without
 	// every player reporting POST_GAME (e.g. someone without GSI configured).
-	idleTimeout = 30 * time.Second
+	// Set generously: GSI pauses emitting while the game is paused, and long
+	// pauses (tech issues, breaks) are common.
+	idleTimeout = 30 * time.Minute
 )
 
 // Gate controls GSI ingest through three states:
