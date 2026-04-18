@@ -155,15 +155,6 @@ Write-Host "GSI config written to: $gsiPath"
 Write-Host "Launch Dota 2 and your stats will be tracked automatically."
 
 Write-Host ""
-Write-Host "--------------------------------------------------------------" -ForegroundColor DarkGray
-Write-Host "Add the league bot as a Steam friend so it can send you lobby invites." -ForegroundColor Cyan
-Write-Host "Click 'Add as Friend' and the bot will accept automatically." -ForegroundColor Cyan
-Write-Host "--------------------------------------------------------------" -ForegroundColor DarkGray
-Write-Host ""
-$open = Read-Host "Open bot Steam profile in browser? (y/n)"
-if ($open -eq 'y' -or $open -eq 'Y') {
-    Start-Process "https://steamcommunity.com/profiles/76561198719296562"
-}
-Write-Host ""
 Write-Host "Done! You're all set." -ForegroundColor Green
 Write-Host ""
+\r
