@@ -95,19 +95,19 @@ try {
 }
 
 # Write GSI config (always - covers fresh registration and already-registered players).
-# Dota may be installed in a secondary Steam library (different drive) — parse
+# Dota may be installed in a secondary Steam library (different drive) - parse
 # libraryfolders.vdf to find the library that actually owns app 570 (Dota 2).
 $dotaLibraryPath = $null
 $libVdfPath = Join-Path $steamPath 'config\libraryfolders.vdf'
 if (Test-Path $libVdfPath) {
     $libVdfText = [System.IO.File]::ReadAllText($libVdfPath)
-    # Match each numbered library block: "0" { ... }, "1" { ... }, etc.
+    # Match each numbered library block.
     $blocks = [regex]::Matches($libVdfText, '"\d+"\s*\{((?:[^{}]|\{[^{}]*\})*)\}')
     foreach ($m in $blocks) {
         $block = $m.Groups[1].Value
         if ($block -match '"570"') {
             if ($block -match '"path"\s*"([^"]+)"') {
-                # Path is stored with escaped backslashes (\\) — unescape.
+                # Path is stored with escaped backslashes - unescape.
                 $dotaLibraryPath = $matches[1] -replace '\\\\', '\'
                 break
             }
@@ -115,7 +115,7 @@ if (Test-Path $libVdfPath) {
     }
 }
 if (-not $dotaLibraryPath) {
-    Write-Host "WARNING: Could not locate Dota 2 in libraryfolders.vdf — falling back to default Steam path." -ForegroundColor Yellow
+    Write-Host "WARNING: Could not locate Dota 2 in libraryfolders.vdf - falling back to default Steam path." -ForegroundColor Yellow
     $dotaLibraryPath = $steamPath
 }
 Write-Host "Dota 2 library: $dotaLibraryPath"
