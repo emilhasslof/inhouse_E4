@@ -159,6 +159,14 @@ func (g *Gate) IsOpen() bool {
 	return g.open
 }
 
+// LockedMatchID returns the match ID the gate is currently locked to, or the
+// empty string if the gate is closed or in the open/confirmation phase.
+func (g *Gate) LockedMatchID() string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.lockedMatchID
+}
+
 // State returns a short human-readable description of the current gate state.
 func (g *Gate) State() string {
 	g.mu.Lock()

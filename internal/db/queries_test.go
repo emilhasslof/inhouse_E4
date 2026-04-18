@@ -312,3 +312,69 @@ func TestCompleteMatch_AlreadyCompleted(t *testing.T) {
 	assert.Equal(t, 30, matches[0].RadiantScore)
 	assert.Equal(t, 20, matches[0].DireScore)
 }
+
+func TestCompleteMatch_FillsMissingFromLiveStats(t *testing.T) {
+	d := newTestDB(t)
+	ctx := context.Background()
+
+	pWithPostGame := insertPlayer(t, d, "HasPostGame", "tok-a")
+	pMissingPostGame := insertPlayer(t, d, "NoPostGame", "tok-b")
+
+	matchID, err := d.UpsertMatch(ctx, "match-fill")
+	require.NoError(t, err)
+
+	// Both players have live stats during the match.
+	require.NoError(t, d.UpsertLiveMatchStat(ctx, matchID, pWithPostGame,
+		900, 10, 2, 8, 2500, 600, 550, 200, 4, 22, "npc_dota_hero_axe", "radiant"))
+	require.NoError(t, d.UpsertLiveMatchStat(ctx, matchID, pMissingPostGame,
+		900, 3, 6, 12, 1800, 400, 420, 90, 2, 19, "npc_dota_hero_lion", "dire"))
+
+	// Only one of them sent a POST_GAME packet (different numbers so we can
+	// verify POST_GAME wins over the live-stats fallback).
+	require.NoError(t, d.UpsertMatchPlayerStat(ctx, matchID, pWithPostGame,
+		"npc_dota_hero_axe", "radiant", 11, 2, 9, 610, 560, 205, 4, 23))
+
+	require.NoError(t, d.CompleteMatch(ctx, matchID, 30, 25, "radiant", 1800))
+
+	detail, err := d.GetMatchDetail(ctx, matchID)
+	require.NoError(t, err)
+	require.NotNil(t, detail)
+
+	byName := map[string]PlayerStatRow{}
+	for _, r := range detail.Radiant {
+		byName[r.DisplayName] = r
+	}
+	for _, r := range detail.Dire {
+		byName[r.DisplayName] = r
+	}
+
+	// POST_GAME row preserved (kills=11 from UpsertMatchPlayerStat, not 10 from live).
+	assert.Equal(t, 11, byName["HasPostGame"].Kills)
+	// Fallback row materialised from live_match_stats.
+	assert.Equal(t, 3, byName["NoPostGame"].Kills)
+	assert.Equal(t, "npc_dota_hero_lion", byName["NoPostGame"].HeroName)
+	assert.Equal(t, "dire", byName["NoPostGame"].TeamName)
+	assert.Equal(t, 19, byName["NoPostGame"].FinalLevel)
+}
+
+// ── InsertOrphan ──────────────────────────────────────────────────────────────
+
+func TestInsertOrphan_RoundTrip(t *testing.T) {
+	d := newTestDB(t)
+	ctx := context.Background()
+
+	require.NoError(t, d.InsertOrphan(ctx,
+		"7890123", "76561199999999999", 142, "DOTA_GAMERULES_STATE_GAME_IN_PROGRESS",
+		"unregistered", `{"player":{"steamid":"76561199999999999"}}`))
+
+	orphans, err := d.ListOrphans(ctx, 10)
+	require.NoError(t, err)
+	require.Len(t, orphans, 1)
+	o := orphans[0]
+	assert.Equal(t, "7890123", o.DotaMatchID)
+	assert.Equal(t, "76561199999999999", o.SteamID)
+	assert.Equal(t, 142, o.ClockTime)
+	assert.Equal(t, "DOTA_GAMERULES_STATE_GAME_IN_PROGRESS", o.GameState)
+	assert.Equal(t, "unregistered", o.DropReason)
+	assert.Contains(t, o.Payload, "76561199999999999")
+}

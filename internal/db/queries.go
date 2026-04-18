@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 )
 
@@ -243,6 +244,9 @@ func (db *DB) UpsertLiveMatchStat(ctx context.Context, matchID, playerID int64,
 }
 
 // CompleteMatch marks a match as completed, records final scores, and clears live stats.
+// Before clearing, it materialises a match_player_stats row from the latest live
+// stat for any player that doesn't already have one — a fallback for players
+// whose POST_GAME packet never arrived (e.g. Dota crashed on the end screen).
 func (db *DB) CompleteMatch(ctx context.Context, matchID int64, radiantScore, direScore int, winTeam string, durationSecs int) error {
 	tx, err := db.conn.BeginTx(ctx, nil)
 	if err != nil {
@@ -257,10 +261,66 @@ func (db *DB) CompleteMatch(ctx context.Context, matchID int64, radiantScore, di
 		radiantScore, direScore, winTeam, durationSecs, matchID); err != nil {
 		return err
 	}
+	res, err := tx.ExecContext(ctx, `
+		INSERT OR IGNORE INTO match_player_stats
+		  (match_id, player_id, hero_name, team_name,
+		   kills, deaths, assists, gpm, xpm, last_hits, denies, final_level)
+		SELECT match_id, player_id, hero_name, team_name,
+		       kills, deaths, assists, gpm, xpm, last_hits, denies, hero_level
+		FROM live_match_stats
+		WHERE match_id = ?`, matchID)
+	if err != nil {
+		return err
+	}
+	if filled, _ := res.RowsAffected(); filled > 0 {
+		log.Printf("[db] CompleteMatch match=%d filled %d missing match_player_stats row(s) from live_match_stats", matchID, filled)
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM live_match_stats WHERE match_id = ?`, matchID); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+// ListOrphans returns orphan packets, newest first, limited to the given count.
+// Pass 0 for an unlimited listing (not recommended — the payload column can be
+// several KB per row). Used by tests and by any future debug endpoint.
+func (db *DB) ListOrphans(ctx context.Context, limit int) ([]Orphan, error) {
+	q := `SELECT id, dota_match_id, steam_id, clock_time, game_state, drop_reason, payload, recorded_at
+	      FROM gsi_orphans ORDER BY id DESC`
+	args := []any{}
+	if limit > 0 {
+		q += ` LIMIT ?`
+		args = append(args, limit)
+	}
+	rows, err := db.conn.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Orphan
+	for rows.Next() {
+		var o Orphan
+		if err := rows.Scan(&o.ID, &o.DotaMatchID, &o.SteamID, &o.ClockTime,
+			&o.GameState, &o.DropReason, &o.Payload, &o.RecordedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+// InsertOrphan records a GSI packet that matched the currently-locked match ID
+// but could not be attributed to a registered player. The raw JSON body is stored
+// verbatim so stats can be reconstructed later.
+func (db *DB) InsertOrphan(ctx context.Context, dotaMatchID, steamID string,
+	clockTime int, gameState, dropReason, payload string,
+) error {
+	_, err := db.conn.ExecContext(ctx, `
+		INSERT INTO gsi_orphans
+		  (dota_match_id, steam_id, clock_time, game_state, drop_reason, payload)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		dotaMatchID, steamID, clockTime, gameState, dropReason, payload)
+	return err
 }
 
 // DeleteMatch removes a match and all its associated rows (snapshots, player

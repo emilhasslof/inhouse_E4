@@ -111,7 +111,10 @@ func confirmMatch(t *testing.T, h *gsi.Handler, matchID string) {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-func TestReceive_UnregisteredSteamID(t *testing.T) {
+func TestReceive_UnregisteredSteamID_NoLockedMatch(t *testing.T) {
+	// When the gate is open but not yet locked, an unregistered packet is
+	// dropped (no orphan row written) because we have no locked match ID to
+	// attribute it to. Response is 200 so Dota keeps sending.
 	d := newSeededDB(t)
 	h := gsi.New(d, openGate())
 
@@ -119,7 +122,40 @@ func TestReceive_UnregisteredSteamID(t *testing.T) {
 		"map":    map[string]any{"matchid": "match-xxx", "game_state": "DOTA_GAMERULES_STATE_GAME_IN_PROGRESS"},
 		"player": map[string]any{"steamid": "not-a-real-steam-id"},
 	})
-	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	orphans, err := d.ListOrphans(context.Background(), 10)
+	require.NoError(t, err)
+	assert.Empty(t, orphans)
+}
+
+func TestReceive_UnregisteredSteamID_LockedMatch_CapturesOrphan(t *testing.T) {
+	d := newSeededDB(t)
+	h := gsi.New(d, openGate())
+	confirmMatch(t, h, "match-locked-orphan")
+
+	resp := sendGSI(t, h, map[string]any{
+		"map": map[string]any{
+			"matchid":    "match-locked-orphan",
+			"clock_time": 142,
+			"game_state": "DOTA_GAMERULES_STATE_GAME_IN_PROGRESS",
+		},
+		"player": map[string]any{
+			"steamid": "76561199999999999",
+			"kills":   4,
+		},
+	})
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	orphans, err := d.ListOrphans(context.Background(), 10)
+	require.NoError(t, err)
+	require.Len(t, orphans, 1)
+	o := orphans[0]
+	assert.Equal(t, "match-locked-orphan", o.DotaMatchID)
+	assert.Equal(t, "76561199999999999", o.SteamID)
+	assert.Equal(t, 142, o.ClockTime)
+	assert.Equal(t, "unregistered", o.DropReason)
+	assert.Contains(t, o.Payload, "76561199999999999")
 }
 
 func TestReceive_NoMatchID(t *testing.T) {

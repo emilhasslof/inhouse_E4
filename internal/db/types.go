@@ -110,6 +110,19 @@ type KDARef struct {
 	KDA  float64 `json:"kda"`
 }
 
+// Orphan is a GSI packet that matched a locked match ID but couldn't be
+// attributed to a registered player. Stored raw for debugging and later replay.
+type Orphan struct {
+	ID          int64  `json:"id"`
+	DotaMatchID string `json:"dota_match_id"`
+	SteamID     string `json:"steam_id"`
+	ClockTime   int    `json:"clock_time"`
+	GameState   string `json:"game_state"`
+	DropReason  string `json:"drop_reason"`
+	Payload     string `json:"payload"`
+	RecordedAt  int64  `json:"recorded_at"`
+}
+
 // DraftEntry is one pick or ban slot in a draft.
 type DraftEntry struct {
 	Slot     int    `json:"slot"`

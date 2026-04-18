@@ -3,6 +3,7 @@ package gsi
 
 import (
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 
@@ -155,8 +156,13 @@ func (h *Handler) Receive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
 	var p Payload
-	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+	if err := json.Unmarshal(body, &p); err != nil {
 		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
@@ -166,16 +172,32 @@ func (h *Handler) Receive(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	player, err := h.db.PlayerBySteamID(r.Context(), p.Player.SteamID)
-	if err != nil {
-		log.Printf("[gsi] gate=%s steamID=%s → 401 unregistered", h.gate.State(), p.Player.SteamID)
-		http.Error(w, "", http.StatusUnauthorized)
-		return
-	}
 
 	// No match ID means we're in a menu or draft — nothing to record.
 	if p.Map.MatchID == "" {
-		log.Printf("[gsi] gate=%s player=%s state=%s matchID=(empty) → skipped", h.gate.State(), player.DisplayName, p.Map.GameState)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	player, err := h.db.PlayerBySteamID(r.Context(), p.Player.SteamID)
+	if err != nil {
+		// Unregistered player. If the gate is locked to this exact match ID,
+		// still capture the raw packet so we can reconstruct stats or debug
+		// registration mismatches later.
+		if locked := h.gate.LockedMatchID(); locked != "" && locked == p.Map.MatchID {
+			if err := h.db.InsertOrphan(r.Context(),
+				p.Map.MatchID, p.Player.SteamID,
+				p.Map.ClockTime, p.Map.GameState, "unregistered", string(body),
+			); err != nil {
+				log.Printf("[gsi] insert orphan match=%s steamID=%s: %v", p.Map.MatchID, p.Player.SteamID, err)
+			} else {
+				log.Printf("[gsi] orphan captured match=%s steamID=%s state=%s clock=%d",
+					p.Map.MatchID, p.Player.SteamID, p.Map.GameState, p.Map.ClockTime)
+			}
+		} else {
+			log.Printf("[gsi] gate=%s steamID=%s matchID=%s → dropped (unregistered, no locked match)",
+				h.gate.State(), p.Player.SteamID, p.Map.MatchID)
+		}
 		w.WriteHeader(http.StatusOK)
 		return
 	}

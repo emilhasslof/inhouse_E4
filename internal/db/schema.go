@@ -90,6 +90,20 @@ CREATE TABLE IF NOT EXISTS live_match_stats (
   UNIQUE(match_id, player_id)
 );
 
+CREATE TABLE IF NOT EXISTS gsi_orphans (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  dota_match_id TEXT    NOT NULL,
+  steam_id      TEXT    NOT NULL,
+  clock_time    INTEGER NOT NULL DEFAULT 0,
+  game_state    TEXT    NOT NULL DEFAULT '',
+  drop_reason   TEXT    NOT NULL,
+  payload       TEXT    NOT NULL,
+  recorded_at   INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_orphans_match ON gsi_orphans(dota_match_id);
+CREATE INDEX IF NOT EXISTS idx_orphans_steam ON gsi_orphans(steam_id);
+
 CREATE INDEX IF NOT EXISTS idx_snapshots_match_player ON gsi_snapshots(match_id, player_id);
 CREATE INDEX IF NOT EXISTS idx_stats_match ON match_player_stats(match_id);
 CREATE INDEX IF NOT EXISTS idx_stats_player ON match_player_stats(player_id);
