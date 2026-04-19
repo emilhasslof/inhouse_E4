@@ -157,3 +157,5 @@ Write-Host "Launch Dota 2 and your stats will be tracked automatically."
 Write-Host ""
 Write-Host "Done! You're all set." -ForegroundColor Green
 Write-Host ""
+
+
