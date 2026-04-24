@@ -188,6 +188,37 @@ func (s *Service) logOn() {
 	})
 }
 
+// sayHelloWithRetry resets the GC ready/abort channels for a fresh session,
+// sends SayHello, and spawns a goroutine that re-sends it every 10s until the
+// GC acknowledges us (HAVE_SESSION) or the abort channel is closed. Safe to
+// call on login and on GC session loss.
+func (s *Service) sayHelloWithRetry() {
+	s.gcMu.Lock()
+	close(s.gcAbort)
+	s.gcAbort = make(chan struct{})
+	s.gcReady = make(chan struct{})
+	abortCh := s.gcAbort
+	readyCh := s.gcReady
+	s.gcMu.Unlock()
+
+	s.dota.SayHello()
+	go func() {
+		t := time.NewTicker(10 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-readyCh:
+				return
+			case <-abortCh:
+				return
+			case <-t.C:
+				log.Println("[bot] GC not ready yet — retrying SayHello")
+				s.dota.SayHello()
+			}
+		}
+	}()
+}
+
 // Start connects to Steam and runs the event loop. It blocks until ctx is
 // cancelled or the connection is permanently lost. Run it in a goroutine.
 func (s *Service) Start(ctx context.Context) {
@@ -205,36 +236,8 @@ func (s *Service) Start(ctx context.Context) {
 			case *steam.LoggedOnEvent:
 				log.Printf("[bot] logged in (steamID: %d)", e.ClientSteamId)
 				s.botAccountID.Store(uint32(e.ClientSteamId))
-
-				// Reset GC ready state for this new session.
-				// Close the old abort channel to stop any previous SayHello goroutine,
-				// then create fresh channels for the new session.
-				s.gcMu.Lock()
-				close(s.gcAbort)
-				s.gcAbort = make(chan struct{})
-				s.gcReady = make(chan struct{})
-				abortCh := s.gcAbort
-				readyCh := s.gcReady
-				s.gcMu.Unlock()
-
 				s.client.GC.SetGamesPlayed(uint64(dota2.AppID))
-				s.dota.SayHello()
-				// Retry SayHello every 10s until the GC acknowledges us.
-				go func() {
-					t := time.NewTicker(10 * time.Second)
-					defer t.Stop()
-					for {
-						select {
-						case <-readyCh:
-							return
-						case <-abortCh:
-							return
-						case <-t.C:
-							log.Println("[bot] GC not ready yet — retrying SayHello")
-							s.dota.SayHello()
-						}
-					}
-				}()
+				s.sayHelloWithRetry()
 
 			case *events.GCConnectionStatusChanged:
 				log.Printf("[bot] GC status: %v", e.NewState)
@@ -248,6 +251,13 @@ func (s *Service) Start(ctx context.Context) {
 					default:
 						close(ch)
 					}
+				} else {
+					// GC session dropped (e.g. Valve's daily GC restart emits
+					// GC_GOING_DOWN → NO_SESSION). Steam stays connected, so
+					// LoggedOnEvent won't fire again — we must re-SayHello
+					// ourselves, otherwise the bot sits idle forever and every
+					// lobby request times out against a dead GC.
+					s.sayHelloWithRetry()
 				}
 
 			case *events.ChatMessage:
