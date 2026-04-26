@@ -102,7 +102,6 @@ var specJSON = []byte(`{
   ]
 }`)
 
-
 // Spec handles GET /api — returns a JSON listing of all available endpoints.
 func (h *Handler) Spec(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -342,6 +341,6 @@ func (h *Handler) ResetLobby(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	go func() {
 		time.Sleep(100 * time.Millisecond) // let the response flush
-		os.Exit(0)
+		os.Exit(1)
 	}()
 }
