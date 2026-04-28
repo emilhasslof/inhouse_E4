@@ -22,6 +22,8 @@ Mark items done with `[x]` when complete, or remove them.
 
 ## Done
 
+- [x] **Completed-match deletion bug fixed** — gate tracks a `completed` flag (set on first POST_GAME via `MarkCompleted`); close paths route to `onFinalize` (live → final stats, no delete) instead of `onAbandon` (archive). Post-completion idle timeout drops to 3 min. `CompleteMatch` no longer wipes `live_match_stats` — `FinalizeMatch` does it at gate close, so stragglers' packets keep the live row fresh until the gate releases.
+- [x] **Cold-storage archive DB** — second SQLite file (default `<DB_PATH dir>/inhouse_archive.db`, override with `ARCHIVE_DB_PATH`) attached as `arc`. Never-completed matches and startup-orphaned in-progress matches are mirrored there (players + matches + all child tables incl. snapshots), with per-table row-count verification before source rows are deleted. Never read by the API.
 - [x] Schema migration added for `win_team` column — `ALTER TABLE` runs on startup so existing DBs are upgraded without needing a full wipe.
 - [x] Win/loss determination now uses `win_team` from GSI POST_GAME packets instead of kill score comparison.
 - [x] Lobby cheats disabled; `POST /api/lobby/create` accepts `game_mode: "captains_mode" | "all_pick"` (default: captains_mode).
