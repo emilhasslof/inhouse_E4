@@ -18,13 +18,20 @@ const (
 	// Set generously: GSI pauses emitting while the game is paused, and long
 	// pauses (tech issues, breaks) are common.
 	idleTimeout = 30 * time.Minute
+
+	// postCompletionIdleTimeout is the shorter idle timeout used once the match
+	// is marked completed (first POST_GAME packet received). Stragglers' POST_GAMEs
+	// arrive within seconds, so we don't need to wait the full idle window —
+	// freeing the gate quickly lets the next !start go through.
+	postCompletionIdleTimeout = 3 * time.Minute
 )
 
 // Gate controls GSI ingest through three states:
 //
 //	closed → open   (bot calls Open when !start is received)
 //	open   → locked (threshold players send the same match ID)
-//	locked → closed (all seen players report POST_GAME, or idle for 30s)
+//	locked → closed (all seen players report POST_GAME, idle timeout, or
+//	                 forced reset; idle timeout drops to 3 min after first POST_GAME)
 //
 // Before the gate is locked, packets are not written to the database.
 // Once locked, only packets for the confirmed match ID are accepted.
@@ -42,11 +49,19 @@ type Gate struct {
 	seenPlayers     map[string]struct{} // all players that sent a packet while locked
 	postGamePlayers map[string]struct{} // players that reported POST_GAME
 	idleTimer       *time.Timer
+	completed       bool // set by MarkCompleted on the first POST_GAME packet
 
-	// onAbandon is called (in a goroutine) whenever a locked match is discarded
-	// without normal completion — idle timeout, forced reset, or a new Open() call
-	// while still locked. The dota match ID string is passed so the caller can
-	// delete the incomplete match from the database.
+	// onFinalize is called (in a goroutine) whenever a *completed* match's gate
+	// closes — whether via all-POST_GAME, idle timeout, forced reset, or a new
+	// Open() call while still locked. The DB row already says state='completed';
+	// the callback should promote any leftover live_match_stats into final stats
+	// and clear them. Never deletes the match.
+	onFinalize func(dotaMatchID string)
+
+	// onAbandon is called (in a goroutine) whenever a locked match closes
+	// *without* having been marked completed — i.e. no POST_GAME packet ever
+	// arrived. The match should be moved to the archive DB so we never lose
+	// data, even forensically.
 	onAbandon func(dotaMatchID string)
 }
 
@@ -59,14 +74,35 @@ func New(threshold int) *Gate {
 	return &Gate{threshold: threshold}
 }
 
-// SetOnAbandon registers a callback that is called (in a goroutine) whenever a
-// locked match is discarded without normal completion. The dota match ID is
-// passed so the caller can delete the incomplete match from the database.
-// Must be called before the gate is opened for the first time.
+// SetOnAbandon registers the callback for never-completed matches (no POST_GAME
+// ever arrived). Must be called before the gate is opened for the first time.
 func (g *Gate) SetOnAbandon(fn func(dotaMatchID string)) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.onAbandon = fn
+}
+
+// SetOnFinalize registers the callback fired when a completed match's gate
+// closes. Must be called before the gate is opened for the first time.
+func (g *Gate) SetOnFinalize(fn func(dotaMatchID string)) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.onFinalize = fn
+}
+
+// MarkCompleted records that the locked match has reached POST_GAME at least
+// once (the DB row is now state='completed'). Switches the idle timer to the
+// shorter post-completion timeout and ensures any subsequent gate close fires
+// onFinalize instead of onAbandon. Safe to call multiple times.
+func (g *Gate) MarkCompleted() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if !g.open || g.lockedMatchID == "" || g.completed {
+		return
+	}
+	g.completed = true
+	g.resetIdleTimerLocked()
+	log.Printf("[gate] match %s marked completed — idle timeout now %s", g.lockedMatchID, postCompletionIdleTimeout)
 }
 
 // Open marks the gate as open and resets any prior state.
@@ -78,10 +114,15 @@ func (g *Gate) Open() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	// Abandon any match that was locked but never completed.
+	// Discard any match that was locked but never closed cleanly.
 	if g.lockedMatchID != "" {
-		log.Printf("[gate] abandoning locked match %s — gate re-opened", g.lockedMatchID)
-		g.fireAbandonLocked(g.lockedMatchID)
+		if g.completed {
+			log.Printf("[gate] finalizing locked match %s — gate re-opened", g.lockedMatchID)
+			g.fireFinalizeLocked(g.lockedMatchID)
+		} else {
+			log.Printf("[gate] abandoning locked match %s — gate re-opened", g.lockedMatchID)
+			g.fireAbandonLocked(g.lockedMatchID)
+		}
 	}
 
 	g.stopIdleTimerLocked()
@@ -91,6 +132,7 @@ func (g *Gate) Open() {
 	g.candidates = make(map[string]map[string]struct{})
 	g.seenPlayers = nil
 	g.postGamePlayers = nil
+	g.completed = false
 	log.Printf("[gate] open — waiting for %d player(s) to confirm match ID", g.threshold)
 }
 
@@ -101,22 +143,31 @@ func (g *Gate) Close() {
 	if g.open {
 		log.Println("[gate] closed — forced reset")
 	}
-	g.closeLocked(false)
+	g.closeLocked()
 }
 
 // closeLocked tears down all gate state. Must be called with g.mu held.
-// Pass completed=true when the match finished normally (all POST_GAME stats
-// already written); pass false for every other path (idle timeout, forced
-// reset, TTL expiry) so the abandon callback fires and cleans up the DB.
-func (g *Gate) closeLocked(completed bool) {
-	mid := g.lockedMatchID // capture before clearing
+//
+// If a match was locked, the post-close callback is chosen by the gate's
+// internal `completed` flag: completed → onFinalize, never-completed → onAbandon.
+func (g *Gate) closeLocked() {
+	mid := g.lockedMatchID
+	wasCompleted := g.completed
+
 	g.stopIdleTimerLocked()
 	g.open = false
 	g.lockedMatchID = ""
 	g.candidates = nil
 	g.seenPlayers = nil
 	g.postGamePlayers = nil
-	if !completed && mid != "" {
+	g.completed = false
+
+	if mid == "" {
+		return
+	}
+	if wasCompleted {
+		g.fireFinalizeLocked(mid)
+	} else {
 		g.fireAbandonLocked(mid)
 	}
 }
@@ -130,6 +181,15 @@ func (g *Gate) fireAbandonLocked(dotaMatchID string) {
 	go fn(dotaMatchID)
 }
 
+// fireFinalizeLocked calls onFinalize in a goroutine. Must be called with g.mu held.
+func (g *Gate) fireFinalizeLocked(dotaMatchID string) {
+	if g.onFinalize == nil {
+		return
+	}
+	fn := g.onFinalize
+	go fn(dotaMatchID)
+}
+
 // stopIdleTimerLocked stops and nils the idle timer. Must be called with g.mu held.
 func (g *Gate) stopIdleTimerLocked() {
 	if g.idleTimer != nil {
@@ -139,14 +199,19 @@ func (g *Gate) stopIdleTimerLocked() {
 }
 
 // resetIdleTimerLocked restarts the idle timer. Must be called with g.mu held.
+// Uses the short post-completion timeout once the gate has been MarkCompleted.
 func (g *Gate) resetIdleTimerLocked() {
 	g.stopIdleTimerLocked()
-	g.idleTimer = time.AfterFunc(idleTimeout, func() {
+	d := idleTimeout
+	if g.completed {
+		d = postCompletionIdleTimeout
+	}
+	g.idleTimer = time.AfterFunc(d, func() {
 		g.mu.Lock()
 		defer g.mu.Unlock()
 		if g.open && g.lockedMatchID != "" {
-			log.Printf("[gate] closed — no packets for %s", idleTimeout)
-			g.closeLocked(false)
+			log.Printf("[gate] closed — no packets for %s", d)
+			g.closeLocked()
 		}
 	})
 }
@@ -209,7 +274,7 @@ func (g *Gate) Accept(matchID, playerSteamID string) bool {
 	// if the match never actually starts.
 	if time.Now().After(g.expiresAt) {
 		log.Println("[gate] closed — confirmation TTL expired")
-		g.closeLocked(false) // lockedMatchID is "" here, so no abandon callback fires
+		g.closeLocked() // lockedMatchID is "" here, so no abandon callback fires
 		return false
 	}
 
@@ -251,6 +316,6 @@ func (g *Gate) PostGame(playerSteamID string) {
 
 	if len(g.postGamePlayers) >= len(g.seenPlayers) {
 		log.Println("[gate] closed — all seen players reported POST_GAME")
-		g.closeLocked(true) // match is complete — stats already written to DB
+		g.closeLocked() // routes through onFinalize since g.completed is set
 	}
 }

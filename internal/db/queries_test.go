@@ -13,7 +13,7 @@ import (
 
 func newTestDB(t *testing.T) *DB {
 	t.Helper()
-	d, err := Open(":memory:")
+	d, err := Open(":memory:", "")
 	require.NoError(t, err, "open in-memory db")
 	t.Cleanup(func() { d.Close() })
 	return d
@@ -313,7 +313,7 @@ func TestCompleteMatch_AlreadyCompleted(t *testing.T) {
 	assert.Equal(t, 20, matches[0].DireScore)
 }
 
-func TestCompleteMatch_FillsMissingFromLiveStats(t *testing.T) {
+func TestFinalizeMatch_FillsMissingFromLiveStats(t *testing.T) {
 	d := newTestDB(t)
 	ctx := context.Background()
 
@@ -335,6 +335,7 @@ func TestCompleteMatch_FillsMissingFromLiveStats(t *testing.T) {
 		"npc_dota_hero_axe", "radiant", 11, 2, 9, 610, 560, 205, 4, 23))
 
 	require.NoError(t, d.CompleteMatch(ctx, matchID, 30, 25, "radiant", 1800))
+	require.NoError(t, d.FinalizeMatch(ctx, "match-fill"))
 
 	detail, err := d.GetMatchDetail(ctx, matchID)
 	require.NoError(t, err)
@@ -355,6 +356,141 @@ func TestCompleteMatch_FillsMissingFromLiveStats(t *testing.T) {
 	assert.Equal(t, "npc_dota_hero_lion", byName["NoPostGame"].HeroName)
 	assert.Equal(t, "dire", byName["NoPostGame"].TeamName)
 	assert.Equal(t, 19, byName["NoPostGame"].FinalLevel)
+}
+
+// ── ArchiveMatch ──────────────────────────────────────────────────────────────
+
+func TestArchiveMatch_RoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	mainPath := dir + "/main.db"
+	arcPath := dir + "/arc.db"
+
+	d, err := Open(mainPath, arcPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { d.Close() })
+
+	ctx := context.Background()
+	pid := insertPlayer(t, d, "P1", "tok-1")
+	matchID, err := d.UpsertMatch(ctx, "match-arc")
+	require.NoError(t, err)
+
+	require.NoError(t, d.InsertSnapshot(ctx, matchID, pid,
+		60, 1, 0, 0, 500, 300, 200, 10, 0, 3, "npc_dota_hero_axe", "radiant"))
+	require.NoError(t, d.UpsertLiveMatchStat(ctx, matchID, pid,
+		120, 2, 1, 1, 800, 350, 220, 20, 1, 5, "npc_dota_hero_axe", "radiant"))
+	require.NoError(t, d.UpsertMatchDraft(ctx, matchID, "radiant", true,
+		[]DraftEntry{{Slot: 0, HeroID: 1, HeroName: "npc_dota_hero_axe"}}))
+
+	require.NoError(t, d.ArchiveMatch(ctx, "match-arc"))
+
+	// Main DB has no trace of the match.
+	var mainCount int
+	require.NoError(t, d.conn.QueryRow(
+		`SELECT COUNT(*) FROM matches WHERE dota_match_id = ?`, "match-arc").Scan(&mainCount))
+	assert.Equal(t, 0, mainCount, "match should be removed from main")
+
+	// Archive DB has the parent and all child rows.
+	for _, q := range []struct {
+		name string
+		sql  string
+		want int
+	}{
+		{"matches", `SELECT COUNT(*) FROM arc.matches WHERE dota_match_id = 'match-arc'`, 1},
+		{"snapshots", `SELECT COUNT(*) FROM arc.gsi_snapshots WHERE match_id = ?`, 1},
+		{"live", `SELECT COUNT(*) FROM arc.live_match_stats WHERE match_id = ?`, 1},
+		{"draft", `SELECT COUNT(*) FROM arc.match_draft WHERE match_id = ?`, 1},
+	} {
+		var got int
+		var err error
+		if q.name == "matches" {
+			err = d.conn.QueryRow(q.sql).Scan(&got)
+		} else {
+			err = d.conn.QueryRow(q.sql, matchID).Scan(&got)
+		}
+		require.NoError(t, err, q.name)
+		assert.Equal(t, q.want, got, "arc.%s row count", q.name)
+	}
+}
+
+func TestFinalizeMatch_MissingMatchIsNoOp(t *testing.T) {
+	d := newTestDB(t)
+	require.NoError(t, d.FinalizeMatch(context.Background(), "does-not-exist"))
+}
+
+func TestFinalizeMatch_NoLiveRowsLeavesStatsUntouched(t *testing.T) {
+	d := newTestDB(t)
+	ctx := context.Background()
+
+	pid := insertPlayer(t, d, "P", "tok-p")
+	matchID, err := d.UpsertMatch(ctx, "match-no-live")
+	require.NoError(t, err)
+	require.NoError(t, d.UpsertMatchPlayerStat(ctx, matchID, pid,
+		"npc_dota_hero_axe", "radiant", 7, 2, 4, 500, 480, 150, 5, 21))
+	require.NoError(t, d.CompleteMatch(ctx, matchID, 30, 25, "radiant", 1800))
+
+	require.NoError(t, d.FinalizeMatch(ctx, "match-no-live"))
+
+	detail, err := d.GetMatchDetail(ctx, matchID)
+	require.NoError(t, err)
+	require.NotNil(t, detail)
+	require.Len(t, detail.Radiant, 1)
+	assert.Equal(t, 7, detail.Radiant[0].Kills, "POST_GAME row preserved")
+}
+
+func TestArchiveInProgressMatches_OnlyMovesInProgress(t *testing.T) {
+	dir := t.TempDir()
+	d, err := Open(dir+"/main.db", dir+"/arc.db")
+	require.NoError(t, err)
+	t.Cleanup(func() { d.Close() })
+
+	ctx := context.Background()
+	pid := insertPlayer(t, d, "P", "tok-p")
+
+	// Two in-progress matches (no CompleteMatch call), each with one live row.
+	for _, dotaID := range []string{"match-ip-1", "match-ip-2"} {
+		mid, err := d.UpsertMatch(ctx, dotaID)
+		require.NoError(t, err)
+		require.NoError(t, d.UpsertLiveMatchStat(ctx, mid, pid,
+			60, 1, 0, 0, 500, 300, 200, 10, 0, 3, "npc_dota_hero_axe", "radiant"))
+	}
+	// One completed match — must be left alone.
+	completedID, err := d.UpsertMatch(ctx, "match-done")
+	require.NoError(t, err)
+	require.NoError(t, d.UpsertMatchPlayerStat(ctx, completedID, pid,
+		"npc_dota_hero_axe", "radiant", 5, 2, 3, 450, 400, 100, 5, 20))
+	require.NoError(t, d.CompleteMatch(ctx, completedID, 30, 20, "radiant", 1800))
+
+	n, err := d.ArchiveInProgressMatches(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 2, n)
+
+	// Main DB now holds only the completed match.
+	var mainCount int
+	require.NoError(t, d.conn.QueryRow(`SELECT COUNT(*) FROM matches`).Scan(&mainCount))
+	assert.Equal(t, 1, mainCount)
+	var completedStillThere int
+	require.NoError(t, d.conn.QueryRow(
+		`SELECT COUNT(*) FROM matches WHERE dota_match_id = 'match-done'`).Scan(&completedStillThere))
+	assert.Equal(t, 1, completedStillThere)
+
+	// Archive DB has both in-progress matches and not the completed one.
+	var arcCount int
+	require.NoError(t, d.conn.QueryRow(`SELECT COUNT(*) FROM arc.matches`).Scan(&arcCount))
+	assert.Equal(t, 2, arcCount)
+	var arcCompleted int
+	require.NoError(t, d.conn.QueryRow(
+		`SELECT COUNT(*) FROM arc.matches WHERE dota_match_id = 'match-done'`).Scan(&arcCompleted))
+	assert.Equal(t, 0, arcCompleted)
+}
+
+func TestArchiveMatch_MissingMatchErrors(t *testing.T) {
+	dir := t.TempDir()
+	d, err := Open(dir+"/main.db", dir+"/arc.db")
+	require.NoError(t, err)
+	t.Cleanup(func() { d.Close() })
+
+	err = d.ArchiveMatch(context.Background(), "does-not-exist")
+	require.Error(t, err)
 }
 
 // ── InsertOrphan ──────────────────────────────────────────────────────────────

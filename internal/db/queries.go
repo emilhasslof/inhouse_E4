@@ -243,24 +243,40 @@ func (db *DB) UpsertLiveMatchStat(ctx context.Context, matchID, playerID int64,
 	return err
 }
 
-// CompleteMatch marks a match as completed, records final scores, and clears live stats.
-// Before clearing, it materialises a match_player_stats row from the latest live
-// stat for any player that doesn't already have one — a fallback for players
-// whose POST_GAME packet never arrived (e.g. Dota crashed on the end screen).
+// CompleteMatch marks a match as completed and records final scores.
+// Live stats are kept around so late packets can keep refreshing them — the
+// gate calls FinalizeMatch when it closes, which is when the live rows are
+// promoted into match_player_stats and finally cleared.
 func (db *DB) CompleteMatch(ctx context.Context, matchID int64, radiantScore, direScore int, winTeam string, durationSecs int) error {
-	tx, err := db.conn.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `
+	_, err := db.conn.ExecContext(ctx, `
 		UPDATE matches
 		SET state = 'completed', radiant_score = ?, dire_score = ?,
 		    win_team = ?, duration_secs = ?, ended_at = unixepoch()
 		WHERE id = ? AND state != 'completed'`,
-		radiantScore, direScore, winTeam, durationSecs, matchID); err != nil {
-		return err
+		radiantScore, direScore, winTeam, durationSecs, matchID)
+	return err
+}
+
+// FinalizeMatch promotes any latest live_match_stats row into match_player_stats
+// for players that never sent a POST_GAME packet, then clears live_match_stats
+// for the match. POST_GAME-set rows are left untouched (they're authoritative).
+// Safe to call on a match that has no live rows — it just no-ops.
+func (db *DB) FinalizeMatch(ctx context.Context, dotaMatchID string) error {
+	tx, err := db.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
 	}
+	defer tx.Rollback()
+
+	var matchID int64
+	err = tx.QueryRowContext(ctx, `SELECT id FROM matches WHERE dota_match_id = ?`, dotaMatchID).Scan(&matchID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("lookup match %s: %w", dotaMatchID, err)
+	}
+
 	res, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO match_player_stats
 		  (match_id, player_id, hero_name, team_name,
@@ -270,13 +286,14 @@ func (db *DB) CompleteMatch(ctx context.Context, matchID int64, radiantScore, di
 		FROM live_match_stats
 		WHERE match_id = ?`, matchID)
 	if err != nil {
-		return err
+		return fmt.Errorf("backfill match_player_stats for %d: %w", matchID, err)
 	}
 	if filled, _ := res.RowsAffected(); filled > 0 {
-		log.Printf("[db] CompleteMatch match=%d filled %d missing match_player_stats row(s) from live_match_stats", matchID, filled)
+		log.Printf("[db] FinalizeMatch match=%d filled %d missing match_player_stats row(s) from live_match_stats", matchID, filled)
 	}
+
 	if _, err := tx.ExecContext(ctx, `DELETE FROM live_match_stats WHERE match_id = ?`, matchID); err != nil {
-		return err
+		return fmt.Errorf("clear live_match_stats for %d: %w", matchID, err)
 	}
 	return tx.Commit()
 }
@@ -323,10 +340,28 @@ func (db *DB) InsertOrphan(ctx context.Context, dotaMatchID, steamID string,
 	return err
 }
 
-// DeleteMatch removes a match and all its associated rows (snapshots, player
-// stats, draft data) atomically. A no-op if the match does not exist.
-// Used by the gate's abandon callback to clean up incomplete matches.
-func (db *DB) DeleteMatch(ctx context.Context, dotaMatchID string) error {
+// childTables are the per-match child tables ArchiveMatch must mirror to the
+// archive DB and then delete from main. Children before parent on delete to
+// satisfy FKs.
+var childTables = []string{
+	"match_draft",
+	"match_player_stats",
+	"live_match_stats",
+	"gsi_snapshots",
+}
+
+// ArchiveMatch copies a match and all its child rows into the attached archive
+// database (`arc.*`), verifies row counts match per table, then deletes from
+// the main DB. The whole operation runs in one transaction; if the verify
+// step fails, the transaction is rolled back and nothing is deleted.
+//
+// Requires the DB to have been opened with a non-empty archivePath.
+// Returns an error (and changes nothing) if the match does not exist.
+func (db *DB) ArchiveMatch(ctx context.Context, dotaMatchID string) error {
+	if !db.HasArchive() {
+		return fmt.Errorf("archive db not attached")
+	}
+
 	tx, err := db.conn.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -336,62 +371,119 @@ func (db *DB) DeleteMatch(ctx context.Context, dotaMatchID string) error {
 	var id int64
 	err = tx.QueryRowContext(ctx, `SELECT id FROM matches WHERE dota_match_id = ?`, dotaMatchID).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil // already gone
+		return fmt.Errorf("match %s not found", dotaMatchID)
 	}
 	if err != nil {
 		return fmt.Errorf("lookup match %s: %w", dotaMatchID, err)
 	}
 
-	for _, stmt := range []string{
-		`DELETE FROM match_draft         WHERE match_id = ?`,
-		`DELETE FROM match_player_stats  WHERE match_id = ?`,
-		`DELETE FROM live_match_stats    WHERE match_id = ?`,
-		`DELETE FROM gsi_snapshots       WHERE match_id = ?`,
-	} {
-		if _, err := tx.ExecContext(ctx, stmt, id); err != nil {
-			return fmt.Errorf("delete child rows for match %d: %w", id, err)
+	// Mirror referenced players first — child rows have FKs into players(id).
+	// We INSERT OR REPLACE so the archive's players table stays current with the
+	// main DB for everyone who appeared in this match.
+	if _, err := tx.ExecContext(ctx, `
+		INSERT OR REPLACE INTO arc.players
+		SELECT * FROM main.players WHERE id IN (
+		  SELECT player_id FROM main.match_player_stats WHERE match_id = ?
+		  UNION SELECT player_id FROM main.live_match_stats   WHERE match_id = ?
+		  UNION SELECT player_id FROM main.gsi_snapshots      WHERE match_id = ?
+		)`, id, id, id); err != nil {
+		return fmt.Errorf("archive players for match %d: %w", id, err)
+	}
+
+	// Mirror the matches row so the FK targets exist for child copies.
+	if _, err := tx.ExecContext(ctx,
+		`INSERT OR REPLACE INTO arc.matches SELECT * FROM main.matches WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("archive matches row %d: %w", id, err)
+	}
+
+	for _, tbl := range childTables {
+		if _, err := tx.ExecContext(ctx,
+			fmt.Sprintf(`INSERT OR REPLACE INTO arc.%s SELECT * FROM main.%s WHERE match_id = ?`, tbl, tbl),
+			id); err != nil {
+			return fmt.Errorf("archive %s for match %d: %w", tbl, id, err)
 		}
 	}
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM matches WHERE id = ?`, id); err != nil {
-		return fmt.Errorf("delete match %d: %w", id, err)
+	// Verify per-table counts match between source and archive copy.
+	if err := verifyArchiveCount(ctx, tx, "matches", id, 1); err != nil {
+		return err
+	}
+	for _, tbl := range childTables {
+		var srcCount int
+		if err := tx.QueryRowContext(ctx,
+			fmt.Sprintf(`SELECT COUNT(*) FROM main.%s WHERE match_id = ?`, tbl), id).Scan(&srcCount); err != nil {
+			return fmt.Errorf("count main.%s for match %d: %w", tbl, id, err)
+		}
+		if err := verifyArchiveCount(ctx, tx, tbl, id, srcCount); err != nil {
+			return err
+		}
+	}
+
+	// Verify passed. Now delete from main, children before parent.
+	for _, tbl := range childTables {
+		if _, err := tx.ExecContext(ctx,
+			fmt.Sprintf(`DELETE FROM main.%s WHERE match_id = ?`, tbl), id); err != nil {
+			return fmt.Errorf("delete main.%s for match %d: %w", tbl, id, err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM main.matches WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("delete main.matches row %d: %w", id, err)
 	}
 	return tx.Commit()
 }
 
-// DeleteInProgressMatches removes every match that is still in state
-// 'in_progress', along with all associated rows. Returns the number of matches
-// deleted. Called at startup to discard matches that were never completed
-// because the server restarted while a game was running.
-func (db *DB) DeleteInProgressMatches(ctx context.Context) (int, error) {
-	tx, err := db.conn.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("begin tx: %w", err)
+// verifyArchiveCount checks that the row count in arc.<table> for the given
+// match_id equals expected. The "matches" table is special-cased to filter
+// by id rather than match_id.
+func verifyArchiveCount(ctx context.Context, tx *sql.Tx, table string, matchID int64, expected int) error {
+	col := "match_id"
+	if table == "matches" {
+		col = "id"
 	}
-	defer tx.Rollback()
-
-	var count int
+	var got int
 	if err := tx.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM matches WHERE state = 'in_progress'`).Scan(&count); err != nil {
-		return 0, fmt.Errorf("count in-progress matches: %w", err)
+		fmt.Sprintf(`SELECT COUNT(*) FROM arc.%s WHERE %s = ?`, table, col), matchID).Scan(&got); err != nil {
+		return fmt.Errorf("count arc.%s for match %d: %w", table, matchID, err)
 	}
-	if count == 0 {
-		return 0, nil
+	if got != expected {
+		return fmt.Errorf("archive verify failed: arc.%s has %d row(s), main has %d", table, got, expected)
 	}
+	return nil
+}
 
-	for _, stmt := range []string{
-		`DELETE FROM match_draft        WHERE match_id IN (SELECT id FROM matches WHERE state = 'in_progress')`,
-		`DELETE FROM match_player_stats WHERE match_id IN (SELECT id FROM matches WHERE state = 'in_progress')`,
-		`DELETE FROM live_match_stats   WHERE match_id IN (SELECT id FROM matches WHERE state = 'in_progress')`,
-		`DELETE FROM gsi_snapshots      WHERE match_id IN (SELECT id FROM matches WHERE state = 'in_progress')`,
-		`DELETE FROM matches            WHERE state = 'in_progress'`,
-	} {
-		if _, err := tx.ExecContext(ctx, stmt); err != nil {
-			return 0, fmt.Errorf("cleanup in-progress matches: %w", err)
+// ArchiveInProgressMatches archives every match still in state 'in_progress'
+// (using ArchiveMatch per row, so each is verified independently) and returns
+// the number successfully archived. Errors on individual matches are logged
+// and the row is left in main; this never aborts halfway.
+func (db *DB) ArchiveInProgressMatches(ctx context.Context) (int, error) {
+	rows, err := db.conn.QueryContext(ctx,
+		`SELECT dota_match_id FROM matches WHERE state = 'in_progress'`)
+	if err != nil {
+		return 0, fmt.Errorf("list in-progress matches: %w", err)
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
 		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
 	}
 
-	return count, tx.Commit()
+	archived := 0
+	for _, id := range ids {
+		if err := db.ArchiveMatch(ctx, id); err != nil {
+			log.Printf("[db] archive in-progress match %s: %v (left in main)", id, err)
+			continue
+		}
+		archived++
+	}
+	return archived, nil
 }
 
 // ListMatches returns all matches ordered by most recently started, including

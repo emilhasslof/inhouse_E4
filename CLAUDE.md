@@ -69,7 +69,7 @@ Post-game detection: when `map.game_state == "DOTA_GAMERULES_STATE_POST_GAME"`, 
 | `players` | Registered players — display name + unique GSI auth token |
 | `matches` | One row per match — state, scores, duration |
 | `gsi_snapshots` | Raw 1-per-second archive per player — **not read by any API endpoint**. Kept as a source of truth for future features (gold graphs, kill timelines). New features should materialise derived data into a purpose-built table rather than querying snapshots directly at request time. |
-| `live_match_stats` | One row per player in the active match — upserted on every GSI tick, deleted when the match completes. Max ~10 rows at any time. Read by `GET /api/matches/:id` when `state == "in_progress"`. Includes `gold` and `clock_time` which are absent from `match_player_stats`. |
+| `live_match_stats` | One row per player in the active match — upserted on every GSI tick, **cleared by `FinalizeMatch` when the gate closes** (not when the match completes). This means stragglers' packets after the first POST_GAME keep refreshing the row, and `FinalizeMatch` promotes the final values into `match_player_stats` for any player who never sent POST_GAME. Read by `GET /api/matches/:id` when `state == "in_progress"`. |
 | `match_player_stats` | Materialised end-of-match K/D/A/GPM/XPM — what the web pages read for completed matches |
 | `player_pair_killstreak` | **Planned** — current and all-time peak killstreak for each ordered (killer, victim) player pair, accumulated across matches |
 
@@ -155,6 +155,8 @@ Railway project: `inhouse-e4` (emilhasslof's workspace)
 
 **Persistent volume configured** — volume `inhouse_e4-volume` is mounted at `/data`. `DB_PATH=/data/inhouse.db` is set in Railway env. DB survives redeploys.
 
+**Archive DB** — a second SQLite file holding cold-storage copies of matches that couldn't complete normally (e.g. server crash mid-game). Path defaults to a sibling of `DB_PATH` (so `/data/inhouse_archive.db` on Railway). Override with `ARCHIVE_DB_PATH`. Schema mirrors the main DB exactly (same `schemaSQL` + `additiveMigrations`). Attached to the main connection as `arc` so cross-database statements work in one transaction. Never read by the API.
+
 **Simulating matches against staging:**
 ```bash
 go run ./cmd/datagen -target <staging-url>
@@ -231,9 +233,13 @@ VALUES ('76561197990491029', 'PlayerName', 'abc123...');
 ### Match gate close logic
 - The gate has three states: **closed** → **open** (on `!start`) → **locked** (once `confirmThreshold` players confirm the same match ID) → **closed**.
 - **Open phase TTL** (4h): if the match never confirms, the gate self-closes. Checked in `Accept()` only — `IsOpen()` no longer checks TTL.
-- **Locked phase**: TTL is intentionally NOT applied. Instead, a 30-second idle timer (reset on every accepted packet) closes the gate if packets stop flowing. This prevents the gate from closing mid-game due to a stale TTL from a previous session.
-- **POST_GAME tracking**: the gate tracks `seenPlayers` (everyone who sent a packet while locked) and `postGamePlayers`. Once every seen player has sent a POST_GAME packet, the gate closes immediately without waiting for the idle timer. Call `gate.PostGame(steamID)` from the handler — do not call `gate.Close()` directly.
-- **Bug found (and fixed):** a TTL check that existed in both `IsOpen()` and `Accept()` caused the gate to lock to a match ID from an expired session, then immediately close on the next `IsOpen()` call. Root cause: `Accept()` did not check TTL, so it could lock even when expired; `IsOpen()` then detected expiry and closed the gate.
+- **Locked phase idle timer**: 30 min of no accepted packets closes the gate. Reset on every accepted packet.
+- **Post-completion idle timer**: once any player sends POST_GAME, `gate.MarkCompleted()` is called from the handler (after `CompleteMatch` succeeds). This switches the idle timer to 3 min and flips the gate's `completed` flag.
+- **POST_GAME tracking**: the gate tracks `seenPlayers` and `postGamePlayers`. Once every seen player has sent POST_GAME, the gate closes immediately. Call `gate.PostGame(steamID)` from the handler — do not call `gate.Close()` directly.
+- **Two close callbacks**:
+  - `onFinalize(dotaMatchID)` — fires when a *completed* gate closes (any path). Wired to `db.FinalizeMatch`, which promotes any leftover `live_match_stats` rows into `match_player_stats` for players who never sent POST_GAME, then clears `live_match_stats`. **Never deletes the match.**
+  - `onAbandon(dotaMatchID)` — fires when a never-completed gate closes (no POST_GAME ever arrived). Wired to `db.ArchiveMatch`, which mirrors the match into the archive DB (verified by row counts) before deleting from main. **Never silently drops data.**
+- **Bug found (and fixed):** completed matches were being deleted by the abandon callback. A POST_GAME packet arrived from one player, marking the DB row `state=completed`. Other seen players never sent POST_GAME, so the gate stayed locked. Either the idle timer fired or a new lobby was created, triggering the abandon callback, which deleted the (already completed) match. Fix: gate tracks a `completed` flag flipped by `MarkCompleted()`; close paths route to `onFinalize` instead of `onAbandon` when set. `CompleteMatch` no longer clears `live_match_stats` — that now happens in `FinalizeMatch` at gate close, so stragglers' packets keep refreshing live stats up until the gate closes.
 
 ### GSI data quality notes
 - `gpm` and `xpm` are wildly inflated for the first ~10 seconds of `clock_time`. Always guard sampling with `clock_time > 10`.

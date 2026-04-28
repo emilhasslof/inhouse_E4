@@ -2,7 +2,9 @@
 //
 // Environment variables:
 //
-//	DB_PATH            path to the SQLite database file (default: inhouse.db)
+//	DB_PATH            path to the SQLite database file (default: data/inhouse.db)
+//	ARCHIVE_DB_PATH    path to the cold-storage SQLite file for archived matches
+//	                   (default: sibling of DB_PATH named "inhouse_archive.db")
 //	PORT               HTTP listen port (default: 8080)
 //	APP_ENV            set to "development" to seed datagen players on startup
 //	CONFIRM_THRESHOLD  players that must agree on a match ID before the gate locks (default: 3)
@@ -15,6 +17,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -29,35 +32,47 @@ func main() {
 	loadEnv(".env")
 
 	dbPath := getEnvOr("DB_PATH", "data/inhouse.db")
+	archivePath := getEnvOr("ARCHIVE_DB_PATH", filepath.Join(filepath.Dir(dbPath), "inhouse_archive.db"))
 	port := getEnvOr("PORT", "8080")
 	appEnv := getEnvOr("APP_ENV", "production")
 	confirmThreshold := getEnvInt("CONFIRM_THRESHOLD", 3)
 
-	database, err := db.Open(dbPath)
+	database, err := db.Open(dbPath, archivePath)
 	if err != nil {
 		log.Fatalf("open database: %v", err)
 	}
 	defer database.Close()
 
-	// Discard any matches that were in-progress when the server last shut down.
-	// The gate starts closed on every boot, so those matches can never be
-	// completed — delete them now rather than leave them orphaned forever.
-	if n, err := database.DeleteInProgressMatches(context.Background()); err != nil {
-		log.Printf("[server] cleanup orphaned matches: %v", err)
+	// Any matches still in 'in_progress' from a previous run can never be
+	// completed (the gate starts closed on every boot), so move them to the
+	// archive DB for forensics and free the live tables.
+	if n, err := database.ArchiveInProgressMatches(context.Background()); err != nil {
+		log.Printf("[server] archive orphaned matches: %v", err)
 	} else if n > 0 {
-		log.Printf("[server] deleted %d orphaned in-progress match(es) from previous run", n)
+		log.Printf("[server] archived %d orphaned in-progress match(es) from previous run", n)
 	}
 
 	gate := match.New(confirmThreshold)
 	log.Printf("[server] match confirm threshold: %d", confirmThreshold)
 
-	// When the gate abandons a match (idle timeout, forced reset, etc.), delete
-	// it and all its rows from the database so no half-complete match lingers.
-	gate.SetOnAbandon(func(dotaMatchID string) {
-		if err := database.DeleteMatch(context.Background(), dotaMatchID); err != nil {
-			log.Printf("[gate] delete abandoned match %s: %v", dotaMatchID, err)
+	// Completed match closing (all POST_GAMEs in, idle timeout after completion,
+	// or a new lobby being opened): finalize stats from the latest packets and
+	// clear live_match_stats. Never deletes the match.
+	gate.SetOnFinalize(func(dotaMatchID string) {
+		if err := database.FinalizeMatch(context.Background(), dotaMatchID); err != nil {
+			log.Printf("[gate] finalize match %s: %v", dotaMatchID, err)
 		} else {
-			log.Printf("[gate] deleted abandoned match %s", dotaMatchID)
+			log.Printf("[gate] finalized match %s", dotaMatchID)
+		}
+	})
+
+	// Never-completed match closing (no POST_GAME ever arrived): archive to the
+	// cold-storage DB instead of deleting, so we always have a forensic copy.
+	gate.SetOnAbandon(func(dotaMatchID string) {
+		if err := database.ArchiveMatch(context.Background(), dotaMatchID); err != nil {
+			log.Printf("[gate] archive abandoned match %s: %v (left in main DB)", dotaMatchID, err)
+		} else {
+			log.Printf("[gate] archived abandoned match %s", dotaMatchID)
 		}
 	})
 

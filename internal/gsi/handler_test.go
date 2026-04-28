@@ -28,7 +28,7 @@ func openGate() *match.Gate {
 
 func newSeededDB(t *testing.T) *db.DB {
 	t.Helper()
-	d, err := db.Open(":memory:")
+	d, err := db.Open(":memory:", "")
 	require.NoError(t, err)
 	t.Cleanup(func() { d.Close() })
 	require.NoError(t, d.Seed())

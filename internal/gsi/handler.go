@@ -281,6 +281,11 @@ func (h *Handler) Receive(w http.ResponseWriter, r *http.Request) {
 		if err := h.db.CompleteMatch(r.Context(), matchID,
 			p.Map.RadiantScore, p.Map.DireScore, p.Map.WinTeam, p.Map.ClockTime); err != nil {
 			log.Printf("[gsi] complete match %d: %v", matchID, err)
+		} else {
+			// Tell the gate the DB row is now state=completed so it switches to the
+			// short post-completion idle timeout and routes future closes through
+			// onFinalize instead of onAbandon.
+			h.gate.MarkCompleted()
 		}
 		h.gate.PostGame(player.SteamID)
 	}
